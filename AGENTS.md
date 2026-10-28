@@ -46,4 +46,7 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
   them the app renders a setup screen — keep that guard.
 - TypeScript is strict with `verbatimModuleSyntax`: use `import type` for
   type-only imports; unused locals/params fail the build.
+- UI is Russian by default (hardcoded strings, no i18n lib); formatters use ru-RU.
+- Shared wallets: `members.unit` groups people (e.g. a couple). Splits stay
+  per-person; balances/settlements aggregate per wallet via `aggregateByUnit`.
 - Definition of done: `npm test` and `npm run build` both green.

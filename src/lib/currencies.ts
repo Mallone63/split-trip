@@ -31,7 +31,7 @@ export function fromMinor(minor: number, code: CurrencyCode): number {
 
 /** Format integer minor units as a localized currency string. */
 export function formatMinor(minor: number, code: CurrencyCode): string {
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat('ru-RU', {
     style: 'currency',
     currency: code,
     minimumFractionDigits: CURRENCIES[code].decimals,

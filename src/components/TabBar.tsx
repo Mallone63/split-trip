@@ -1,9 +1,9 @@
 export type Tab = 'balances' | 'expenses' | 'invite';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'balances', label: 'Balances', icon: '⚖️' },
-  { id: 'expenses', label: 'Expenses', icon: '🧾' },
-  { id: 'invite', label: 'Invite', icon: '👥' },
+  { id: 'balances', label: 'Балансы', icon: '⚖️' },
+  { id: 'expenses', label: 'Расходы', icon: '🧾' },
+  { id: 'invite', label: 'Пригласить', icon: '👥' },
 ];
 
 interface Props {

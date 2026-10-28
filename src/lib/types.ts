@@ -10,6 +10,8 @@ export interface Member {
   id: string;
   tripId: string;
   name: string;
+  /** Members with the same non-null `unit` share one wallet (e.g. a couple). */
+  unit?: string | null;
 }
 
 /** One member's share of an expense, in the expense's own currency (integer minor units). */

@@ -133,27 +133,27 @@ export default function ExpenseForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          New expense
+          Новый расход
         </h2>
         <button type="button" onClick={onCancel} className="text-sm font-medium text-slate-500">
-          Cancel
+          Отмена
         </button>
       </div>
 
       <div className="space-y-4 rounded-2xl bg-white p-4 shadow-sm">
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">What was it for?</span>
+          <span className="text-sm font-medium text-slate-700">За что?</span>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Ramen dinner"
+            placeholder="Ужин в раменной"
             className={inputClass}
           />
         </label>
 
         <div className="flex gap-2">
           <label className="block min-w-0 flex-1">
-            <span className="text-sm font-medium text-slate-700">Amount</span>
+            <span className="text-sm font-medium text-slate-700">Сумма</span>
             <input
               value={amountStr}
               onChange={(e) => setAmountStr(e.target.value)}
@@ -163,7 +163,7 @@ export default function ExpenseForm({
             />
           </label>
           <label className="block w-32 shrink-0">
-            <span className="text-sm font-medium text-slate-700">Currency</span>
+            <span className="text-sm font-medium text-slate-700">Валюта</span>
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
@@ -180,7 +180,7 @@ export default function ExpenseForm({
 
         <div className="flex gap-2">
           <label className="block min-w-0 flex-1">
-            <span className="text-sm font-medium text-slate-700">Paid by</span>
+            <span className="text-sm font-medium text-slate-700">Кто платил</span>
             <select
               value={payerId}
               onChange={(e) => setPayerId(e.target.value)}
@@ -194,7 +194,7 @@ export default function ExpenseForm({
             </select>
           </label>
           <label className="block min-w-0 flex-1">
-            <span className="text-sm font-medium text-slate-700">Date</span>
+            <span className="text-sm font-medium text-slate-700">Дата</span>
             <input
               type="date"
               value={spentAt}
@@ -205,7 +205,7 @@ export default function ExpenseForm({
         </div>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Rate to {baseCurrency}</span>
+          <span className="text-sm font-medium text-slate-700">Курс к {baseCurrency}</span>
           {currency === baseCurrency ? (
             <input value="1" disabled className={`${inputClass} bg-slate-100 text-slate-400`} />
           ) : (
@@ -218,10 +218,10 @@ export default function ExpenseForm({
                 className={inputClass}
               />
               <span className="mt-1 block text-xs text-slate-400">
-                {rateStatus === 'loading' && 'Fetching today’s rate…'}
+                {rateStatus === 'loading' && 'Получаем сегодняшний курс…'}
                 {rateStatus === 'ready' &&
-                  `Today’s market rate: 1 ${currency} = ${rateStr} ${baseCurrency}. Enter your bank’s real rate if it differs.`}
-                {rateStatus === 'unavailable' && 'No internet — enter the rate manually.'}
+                  `Рыночный курс: 1 ${currency} = ${rateStr} ${baseCurrency}. Если карта платит по другому курсу — введите фактический.`}
+                {rateStatus === 'unavailable' && 'Нет сети — введите курс вручную.'}
               </span>
             </>
           )}
@@ -239,7 +239,7 @@ export default function ExpenseForm({
                 mode === modeOption ? 'bg-white text-teal-700 shadow' : 'text-slate-500'
               }`}
             >
-              {modeOption === 'equal' ? 'Split equally' : 'Exact amounts'}
+              {modeOption === 'equal' ? 'Поровну' : 'По суммам'}
             </button>
           ))}
         </div>
@@ -262,7 +262,7 @@ export default function ExpenseForm({
                   >
                     <span className="text-sm text-slate-800">
                       {member.name}
-                      {member.id === payerId ? ' (payer)' : ''}
+                      {member.id === payerId ? ' (плательщик)' : ''}
                     </span>
                     <span className="text-sm font-medium text-slate-600">
                       {isSelected && amountMinor > 0 ? formatMinor(share, currency) : '—'}
@@ -297,7 +297,7 @@ export default function ExpenseForm({
                   : 'text-red-500'
               }`}
             >
-              {formatMinor(sumSplits(exactSplits), currency)} of {formatMinor(amountMinor, currency)}
+              {formatMinor(sumSplits(exactSplits), currency)} из {formatMinor(amountMinor, currency)}
             </p>
             {exactCheck && !exactCheck.ok && amountMinor > 0 && (
               <p className="text-xs text-red-500">{exactCheck.error}</p>
@@ -313,9 +313,8 @@ export default function ExpenseForm({
         disabled={!canSave}
         className="w-full rounded-xl bg-teal-600 py-3 text-base font-semibold text-white shadow disabled:opacity-40"
       >
-        {submitting ? 'Saving…' : 'Save expense'}
+        {submitting ? 'Сохраняю…' : 'Сохранить расход'}
       </button>
     </form>
   );
 }
-

@@ -5,10 +5,12 @@ import {
   deleteExpense,
   getMe,
   getTripIdFromUrl,
+  linkWallet,
   loadTripBundle,
   putTripIdInUrl,
   setMe,
   subscribeToExpenses,
+  unlinkWallet,
   type NewExpenseInput,
   type TripBundle,
 } from './lib/api';
@@ -27,7 +29,7 @@ function Shell({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
-  const [tripId] = useState<string | null>(() => (supabaseConfigured ? getTripIdFromUrl() : null));
+  const [tripId, setTripId] = useState<string | null>(() => (supabaseConfigured ? getTripIdFromUrl() : null));
   const [bundle, setBundle] = useState<TripBundle | null>(null);
   const [tripLoaded, setTripLoaded] = useState(false);
   const [loading, setLoading] = useState(Boolean(tripId));
@@ -76,6 +78,7 @@ export default function App() {
 
   function handleCreated(created: TripBundle) {
     putTripIdInUrl(created.trip.id);
+    setTripId(created.trip.id);
     setMeIdState(getMe(created.trip.id));
     setBundle(created);
     setTripLoaded(true);
@@ -107,6 +110,31 @@ export default function App() {
       current ? { ...current, members: [...current.members, member] } : current,
     );
     return member;
+  }
+
+  async function handleLinkWallet(memberIds: string[]) {
+    if (!bundle) return;
+    const updated = await linkWallet(memberIds);
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            members: current.members.map((m) => updated.find((u) => u.id === m.id) ?? m),
+          }
+        : current,
+    );
+  }
+
+  async function handleUnlinkWallet(unit: string) {
+    const updated = await unlinkWallet(unit);
+    setBundle((current) =>
+      current
+        ? {
+            ...current,
+            members: current.members.map((m) => updated.find((u) => u.id === m.id) ?? m),
+          }
+        : current,
+    );
   }
 
   function handleSetMe(memberId: string | null) {
@@ -213,6 +241,8 @@ export default function App() {
             meId={meId}
             onSetMe={handleSetMe}
             onAddMember={handleAddMember}
+            onLinkWallet={handleLinkWallet}
+            onUnlinkWallet={handleUnlinkWallet}
           />
         )}
       </main>

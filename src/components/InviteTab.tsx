@@ -8,15 +8,26 @@ interface Props {
   meId: string | null;
   onSetMe: (memberId: string | null) => void;
   onAddMember: (name: string) => Promise<Member>;
+  onLinkWallet: (memberIds: string[]) => Promise<void>;
+  onUnlinkWallet: (unit: string) => Promise<void>;
 }
 
-export default function InviteTab({ tripId, members, meId, onSetMe, onAddMember }: Props) {
+export default function InviteTab({
+  tripId,
+  members,
+  meId,
+  onSetMe,
+  onAddMember,
+  onLinkWallet,
+  onUnlinkWallet,
+}: Props) {
   const shareUrl = `${window.location.origin}${window.location.pathname}?trip=${tripId}`;
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [newName, setNewName] = useState('');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let active = true;
@@ -38,7 +49,7 @@ export default function InviteTab({ tripId, members, meId, onSetMe, onAddMember 
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      window.prompt('Copy this link:', shareUrl);
+      window.prompt('Скопируйте ссылку:', shareUrl);
     }
   }
 
@@ -58,19 +69,49 @@ export default function InviteTab({ tripId, members, meId, onSetMe, onAddMember 
     }
   }
 
+  function toggleSelected(memberId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(memberId)) next.delete(memberId);
+      else next.add(memberId);
+      return next;
+    });
+  }
+
+  async function handleLink() {
+    if (selected.size < 2) return;
+    try {
+      await onLinkWallet([...selected]);
+      setSelected(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function handleUnlink(unit: string) {
+    try {
+      await onUnlinkWallet(unit);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  const units = [...new Set(members.filter((m) => m.unit).map((m) => m.unit as string))];
+  const singles = members.filter((m) => !m.unit);
+
   return (
     <div className="space-y-4">
       <section className="rounded-2xl bg-white p-4 text-center shadow-sm">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Invite the group
+          Пригласить компанию
         </h2>
         <p className="mt-1 text-xs text-slate-400">
-          Anyone with this link can view and add expenses.
+          Любой, кто откроет ссылку, может смотреть и добавлять расходы.
         </p>
         {qrUrl && (
           <img
             src={qrUrl}
-            alt="Trip invite QR code"
+            alt="QR-код приглашения"
             width={200}
             height={200}
             className="mx-auto mt-3 rounded-lg"
@@ -84,13 +125,13 @@ export default function InviteTab({ tripId, members, meId, onSetMe, onAddMember 
           onClick={() => void handleCopy()}
           className="mt-3 w-full rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white"
         >
-          {copied ? 'Copied!' : 'Copy link'}
+          {copied ? 'Скопировано!' : 'Скопировать ссылку'}
         </button>
       </section>
 
       <section className="rounded-2xl bg-white p-4 shadow-sm">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Trip members
+          Участники
         </h2>
         <ul className="divide-y divide-slate-100">
           {members.map((member) => (
@@ -106,7 +147,7 @@ export default function InviteTab({ tripId, members, meId, onSetMe, onAddMember 
                     meId === member.id ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-400'
                   }`}
                 >
-                  {meId === member.id ? 'you' : 'tap to set as you'}
+                  {meId === member.id ? 'это вы' : 'нажмите — это вы'}
                 </span>
               </button>
             </li>
@@ -117,7 +158,7 @@ export default function InviteTab({ tripId, members, meId, onSetMe, onAddMember 
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="Add someone…"
+            placeholder="Добавить человека…"
             className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
           />
           <button
@@ -125,13 +166,88 @@ export default function InviteTab({ tripId, members, meId, onSetMe, onAddMember 
             disabled={!newName.trim() || adding}
             className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
           >
-            {adding ? '…' : 'Add'}
+            {adding ? '…' : 'Добавить'}
           </button>
         </form>
-        {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
         <p className="mt-2 text-xs text-slate-400">
-          Setting “you” makes new expenses default to your name.
+          «Это вы» — новые расходы по умолчанию будут от вашего имени.
         </p>
+      </section>
+
+      <section className="rounded-2xl bg-white p-4 shadow-sm">
+        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Общий бюджет
+        </h2>
+        <p className="text-xs text-slate-400">
+          Для пары или компании с общими деньгами: траты делятся по людям, но баланс и расчёты
+          считаются на весь кошелёк.
+        </p>
+
+        {units.length > 0 && (
+          <ul className="mt-3 space-y-2">
+            {units.map((unit) => {
+              const names = members
+                .filter((m) => m.unit === unit)
+                .map((m) => m.name)
+                .join(' + ');
+              return (
+                <li
+                  key={unit}
+                  className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"
+                >
+                  <span className="text-sm font-medium text-slate-800">{names}</span>
+                  <button
+                    type="button"
+                    onClick={() => void handleUnlink(unit)}
+                    className="text-xs font-medium text-red-500"
+                  >
+                    Разъединить
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {singles.length >= 2 && (
+          <div className="mt-3">
+            <p className="mb-1 text-xs text-slate-500">Отметьте, кто делит один кошелёк:</p>
+            <ul className="space-y-1">
+              {singles.map((member) => {
+                const isSelected = selected.has(member.id);
+                return (
+                  <li key={member.id}>
+                    <button
+                      type="button"
+                      onClick={() => toggleSelected(member.id)}
+                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left ${
+                        isSelected ? 'border-teal-300 bg-teal-50' : 'border-slate-200 bg-white'
+                      }`}
+                    >
+                      <span className="text-sm text-slate-800">{member.name}</span>
+                      <span
+                        className={`text-xs font-semibold ${
+                          isSelected ? 'text-teal-700' : 'text-slate-300'
+                        }`}
+                      >
+                        {isSelected ? '✓' : '+'}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <button
+              type="button"
+              disabled={selected.size < 2}
+              onClick={() => void handleLink()}
+              className="mt-2 w-full rounded-lg bg-slate-800 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              Общий кошелёк ({selected.size})
+            </button>
+          </div>
+        )}
+        {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
       </section>
     </div>
   );

@@ -64,3 +64,41 @@ export function suggestSettlements(balances: Balance[]): Settlement[] {
   }
   return settlements;
 }
+
+/** A wallet: one member, or several members sharing money (e.g. a couple). */
+export interface UnitBalance {
+  /** Stable key: the shared `unit` value, or `solo:<memberId>` for single members. */
+  key: string;
+  label: string;
+  memberIds: string[];
+  netMinor: number;
+}
+
+/**
+ * Aggregate per-member balances into wallet balances. Members sharing a non-null
+ * `unit` form one wallet; solo members are wallets of one. Splits stay per-person —
+ * only the reporting level changes. Wallet nets still sum to zero.
+ */
+export function aggregateByUnit(members: Member[], balances: Balance[]): UnitBalance[] {
+  const byId = new Map(members.map((member) => [member.id, member]));
+  const keyOf = (memberId: string): string => byId.get(memberId)?.unit ?? `solo:${memberId}`;
+
+  const wallets = new Map<string, UnitBalance>();
+  for (const member of members) {
+    const key = keyOf(member.id);
+    let wallet = wallets.get(key);
+    if (!wallet) {
+      wallet = { key, label: member.name, memberIds: [], netMinor: 0 };
+      wallets.set(key, wallet);
+    }
+    wallet.memberIds.push(member.id);
+    wallet.label = wallet.memberIds.map((id) => byId.get(id)?.name ?? '—').join(' + ');
+  }
+
+  for (const balance of balances) {
+    const wallet = wallets.get(keyOf(balance.memberId));
+    if (wallet) wallet.netMinor += balance.netMinor;
+  }
+
+  return [...wallets.values()];
+}

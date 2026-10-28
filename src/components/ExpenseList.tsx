@@ -13,8 +13,8 @@ interface Props {
 
 function groupLabel(dateStr: string): string {
   const today = new Date().toISOString().slice(0, 10);
-  if (dateStr === today) return 'Today';
-  return new Date(`${dateStr}T00:00:00`).toLocaleDateString(undefined, {
+  if (dateStr === today) return 'Сегодня';
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('ru-RU', {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
@@ -44,30 +44,30 @@ export default function ExpenseList({ expenses, members, baseCurrency, onAdd, on
     return [...map.entries()];
   }, [sorted]);
 
-  const nameOf = (memberId: string) => members.find((m) => m.id === memberId)?.name ?? 'Unknown';
+  const nameOf = (memberId: string) => members.find((m) => m.id === memberId)?.name ?? '???';
 
   async function handleDelete(expense: Expense) {
-    if (!window.confirm(`Delete "${expense.title}"?`)) return;
+    if (!window.confirm(`Удалить «${expense.title}»?`)) return;
     await onDelete(expense.id);
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Expenses</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Расходы</h2>
         <button
           type="button"
           onClick={onAdd}
           className="rounded-full bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow"
         >
-          + Add
+          + Добавить
         </button>
       </div>
 
       {sorted.length === 0 && (
         <div className="rounded-2xl bg-white p-8 text-center shadow-sm">
-          <p className="text-sm text-slate-500">No expenses yet.</p>
-          <p className="mt-1 text-xs text-slate-400">Tap “+ Add” to record the first one.</p>
+          <p className="text-sm text-slate-500">Пока нет расходов.</p>
+          <p className="mt-1 text-xs text-slate-400">Нажмите «+ Добавить», чтобы записать первый.</p>
         </div>
       )}
 
@@ -92,8 +92,7 @@ export default function ExpenseList({ expenses, members, baseCurrency, onAdd, on
                         {expense.title}
                       </span>
                       <span className="block text-xs text-slate-400">
-                        {nameOf(expense.payerId)} paid · {participantCount}{' '}
-                        {participantCount === 1 ? 'person' : 'people'}
+                        Оплатил(а) {nameOf(expense.payerId)} · {participantCount} чел.
                       </span>
                     </span>
                     <span className="shrink-0 text-right">
@@ -128,7 +127,7 @@ export default function ExpenseList({ expenses, members, baseCurrency, onAdd, on
                         onClick={() => void handleDelete(expense)}
                         className="mt-3 text-xs font-medium text-red-500"
                       >
-                        Delete expense
+                        Удалить расход
                       </button>
                     </div>
                   )}

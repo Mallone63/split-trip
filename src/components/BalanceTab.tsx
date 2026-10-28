@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { computeBalances, suggestSettlements } from '../lib/balances';
+import { aggregateByUnit, computeBalances, suggestSettlements } from '../lib/balances';
 import { formatMinor, type CurrencyCode } from '../lib/currencies';
 import type { Expense, Member } from '../lib/types';
 
@@ -15,24 +15,31 @@ export default function BalanceTab({ members, expenses, baseCurrency, meId }: Pr
     () => computeBalances(members, expenses, baseCurrency),
     [members, expenses, baseCurrency],
   );
-  const settlements = useMemo(() => suggestSettlements(balances), [balances]);
+  const wallets = useMemo(() => aggregateByUnit(members, balances), [members, balances]);
+  const settlements = useMemo(
+    () => suggestSettlements(wallets.map((w) => ({ memberId: w.key, netMinor: w.netMinor }))),
+    [wallets],
+  );
   const totalSpent = useMemo(
     () => expenses.reduce((sum, expense) => sum + expense.baseAmountMinor, 0),
     [expenses],
   );
 
-  const nameOf = (memberId: string) => {
-    const member = members.find((m) => m.id === memberId);
-    const label = member ? member.name : 'Unknown';
-    return memberId === meId ? `${label} (you)` : label;
+  const labelOf = (unitKey: string): string => {
+    const wallet = wallets.find((w) => w.key === unitKey);
+    if (!wallet) return '—';
+    return wallet.memberIds.includes(meId ?? '') ? `${wallet.label} (вы)` : wallet.label;
   };
+
+  const amountOf = (netMinor: number): string =>
+    netMinor === 0 ? 'ок' : `${netMinor > 0 ? '+' : ''}${formatMinor(netMinor, baseCurrency)}`;
 
   return (
     <div className="space-y-4">
       <section className="rounded-2xl bg-white p-4 shadow-sm">
         <div className="flex items-baseline justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Total spent
+            Всего потрачено
           </h2>
           <p className="text-lg font-bold text-slate-900">
             {formatMinor(totalSpent, baseCurrency)}
@@ -42,36 +49,42 @@ export default function BalanceTab({ members, expenses, baseCurrency, meId }: Pr
 
       <section className="rounded-2xl bg-white p-4 shadow-sm">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Balances
+          Балансы
         </h2>
         <ul className="divide-y divide-slate-100">
-          {balances.map((balance) => (
-            <li key={balance.memberId} className="flex items-center justify-between py-2.5">
-              <span className="text-base text-slate-800">{nameOf(balance.memberId)}</span>
-              <span
-                className={`text-base font-semibold ${
-                  balance.netMinor > 0
-                    ? 'text-emerald-600'
-                    : balance.netMinor < 0
-                      ? 'text-red-500'
-                      : 'text-slate-400'
-                }`}
-              >
-                {balance.netMinor === 0
-                  ? 'settled'
-                  : `${balance.netMinor > 0 ? 'gets' : 'owes'} ${formatMinor(Math.abs(balance.netMinor), baseCurrency)}`}
-              </span>
-            </li>
-          ))}
+          {wallets.map((wallet) => {
+            const label = wallet.memberIds.includes(meId ?? '')
+              ? `${wallet.label} (вы)`
+              : wallet.label;
+            return (
+              <li key={wallet.key} className="flex items-center justify-between py-2.5">
+                <span className="text-base text-slate-800">{label}</span>
+                <span
+                  className={`text-base font-semibold ${
+                    wallet.netMinor > 0
+                      ? 'text-emerald-600'
+                      : wallet.netMinor < 0
+                        ? 'text-red-500'
+                        : 'text-slate-400'
+                  }`}
+                >
+                  {amountOf(wallet.netMinor)}
+                </span>
+              </li>
+            );
+          })}
         </ul>
+        <p className="mt-2 text-xs text-slate-400">
+          + — этому кошельку должны, − — этот кошелёк должен.
+        </p>
       </section>
 
       <section className="rounded-2xl bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Suggested settlements
+          Предлагаемые расчёты
         </h2>
         {settlements.length === 0 ? (
-          <p className="text-sm text-slate-500">Everyone is even. 🎉</p>
+          <p className="text-sm text-slate-500">Все в расчёте 🎉</p>
         ) : (
           <ul className="space-y-2">
             {settlements.map((settlement, index) => (
@@ -80,9 +93,9 @@ export default function BalanceTab({ members, expenses, baseCurrency, meId }: Pr
                 className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"
               >
                 <span className="text-sm text-slate-700">
-                  <strong>{nameOf(settlement.fromMemberId)}</strong>
+                  <strong>{labelOf(settlement.fromMemberId)}</strong>
                   {' → '}
-                  <strong>{nameOf(settlement.toMemberId)}</strong>
+                  <strong>{labelOf(settlement.toMemberId)}</strong>
                 </span>
                 <span className="text-sm font-semibold text-slate-900">
                   {formatMinor(settlement.amountMinor, baseCurrency)}
@@ -92,7 +105,8 @@ export default function BalanceTab({ members, expenses, baseCurrency, meId }: Pr
           </ul>
         )}
         <p className="mt-3 text-xs text-slate-400">
-          Settle in person however you like — amounts are shown in {baseCurrency}.
+          Рассчитывайтесь как удобно — суммы в {baseCurrency}. Из общего кошелька деньги может
+          принять любой из его участников.
         </p>
       </section>
     </div>

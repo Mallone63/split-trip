@@ -11,10 +11,12 @@ create table public.trips (
   created_at timestamptz not null default now()
 );
 
+-- members.unit: members with the same non-null value share one wallet (e.g. a couple).
 create table public.members (
   id uuid primary key default gen_random_uuid(),
   trip_id uuid not null references public.trips (id) on delete cascade,
   name text not null,
+  unit text,
   created_at timestamptz not null default now()
 );
 

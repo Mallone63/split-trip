@@ -9,6 +9,9 @@ whom. Built for one trip, no accounts — the invite link is the access control.
 - **Splits:** equal split among selected people (tap someone off if they
   weren't part of an expense) or exact amounts per person.
 - **Settle up:** suggested minimal transfers (greedy min-cash-flow).
+- **Shared wallets:** pair up members (e.g. a couple) — splits stay per-person,
+  but balances and settlements are computed per wallet.
+- **Russian UI:** the interface is in Russian by default (no i18n dependency).
 - **Realtime:** everyone sees new expenses instantly (Supabase realtime).
 - **Install:** iPhone Safari → Share → *Add to Home Screen* → runs standalone.
 
@@ -33,6 +36,8 @@ The app shows setup instructions in place until `VITE_SUPABASE_URL` and
 
 1. Create a free project at [supabase.com](https://supabase.com).
 2. SQL Editor → run [`supabase/schema.sql`](supabase/schema.sql).
+   Already deployed before the shared-wallet feature? Run:
+   `alter table public.members add column if not exists unit text;`
 3. Project Settings → API → copy the URL and the anon key into `.env`.
 
 ## Tests & build

@@ -21,6 +21,7 @@ interface DbMember {
   id: string;
   trip_id: string;
   name: string;
+  unit: string | null;
 }
 
 interface DbExpense {
@@ -42,7 +43,7 @@ function mapTrip(row: DbTrip): Trip {
 }
 
 function mapMember(row: DbMember): Member {
-  return { id: row.id, tripId: row.trip_id, name: row.name };
+  return { id: row.id, tripId: row.trip_id, name: row.name, unit: row.unit ?? null };
 }
 
 function mapExpense(row: DbExpense): Expense {
@@ -190,6 +191,31 @@ export async function addMember(tripId: string, name: string): Promise<Member> {
     .single();
   if (error) throw new Error(error.message);
   return mapMember(data as DbMember);
+}
+
+/** Put several members on one shared wallet (e.g. a couple). Returns the updated members. */
+export async function linkWallet(memberIds: string[]): Promise<Member[]> {
+  const client = db();
+  const unit = crypto.randomUUID();
+  const { data, error } = await client
+    .from('members')
+    .update({ unit })
+    .in('id', memberIds)
+    .select();
+  if (error) throw new Error(error.message);
+  return (data as DbMember[]).map(mapMember);
+}
+
+/** Detach every member of a shared wallet. Returns the updated members. */
+export async function unlinkWallet(unit: string): Promise<Member[]> {
+  const client = db();
+  const { data, error } = await client
+    .from('members')
+    .update({ unit: null })
+    .eq('unit', unit)
+    .select();
+  if (error) throw new Error(error.message);
+  return (data as DbMember[]).map(mapMember);
 }
 
 export function subscribeToExpenses(tripId: string, onChange: () => void): () => void {

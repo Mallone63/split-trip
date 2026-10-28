@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeBalances, suggestSettlements } from '../balances';
+import { aggregateByUnit, computeBalances, suggestSettlements } from '../balances';
 import type { Expense, Member } from '../types';
 
 const members: Member[] = [
@@ -154,5 +154,76 @@ describe('suggestSettlements', () => {
       { memberId: 'ben', netMinor: -1200 },
     ]);
     expect(settlements).toEqual([{ fromMemberId: 'ben', toMemberId: 'ana', amountMinor: 1200 }]);
+  });
+});
+
+describe('aggregateByUnit', () => {
+  const pairedMembers: Member[] = [
+    { id: 'ana', tripId: 't', name: 'Ana', unit: 'u1' },
+    { id: 'ben', tripId: 't', name: 'Ben', unit: 'u1' },
+    { id: 'carl', tripId: 't', name: 'Carl', unit: null },
+  ];
+
+  it('merges a couple into one wallet, labels it, and keeps wallets zero-sum', () => {
+    // Ana pays 100.00 for all three: shares 33.34 / 33.33 / 33.33.
+    const balances = computeBalances(
+      pairedMembers,
+      [
+        mkExpense({
+          payerId: 'ana',
+          amountMinor: 10000,
+          splits: [
+            { memberId: 'ana', amountMinor: 3334 },
+            { memberId: 'ben', amountMinor: 3333 },
+            { memberId: 'carl', amountMinor: 3333 },
+          ],
+        }),
+      ],
+      'USD',
+    );
+
+    const wallets = aggregateByUnit(pairedMembers, balances);
+    const byKey = new Map(wallets.map((w) => [w.key, w]));
+
+    // The couple paid 100.00 and consumed 66.67 → +33.33; Carl owes 33.33.
+    expect(byKey.get('u1')?.netMinor).toBe(3333);
+    expect(byKey.get('u1')?.label).toBe('Ana + Ben');
+    expect(byKey.get('solo:carl')?.netMinor).toBe(-3333);
+    expect(wallets.reduce((sum, w) => sum + w.netMinor, 0)).toBe(0);
+  });
+
+  it('credits the shared wallet when one partner pays for someone outside it', () => {
+    // Ana (of the u1 couple) pays 50.00; participants: Ana and Carl only.
+    const balances = computeBalances(
+      pairedMembers,
+      [
+        mkExpense({
+          payerId: 'ana',
+          amountMinor: 5000,
+          splits: [
+            { memberId: 'ana', amountMinor: 2500 },
+            { memberId: 'carl', amountMinor: 2500 },
+          ],
+        }),
+      ],
+      'USD',
+    );
+
+    const wallets = aggregateByUnit(pairedMembers, balances);
+    expect(wallets.find((w) => w.key === 'u1')?.netMinor).toBe(2500);
+
+    const settlements = suggestSettlements(
+      wallets.map((w) => ({ memberId: w.key, netMinor: w.netMinor })),
+    );
+    expect(settlements).toEqual([
+      { fromMemberId: 'solo:carl', toMemberId: 'u1', amountMinor: 2500 },
+    ]);
+  });
+
+  it('behaves like per-member balances when nothing is paired', () => {
+    const wallets = aggregateByUnit(members, []);
+    expect(wallets.map((w) => [w.key, w.netMinor])).toEqual(
+      members.map((m) => [`solo:${m.id}`, 0]),
+    );
   });
 });
