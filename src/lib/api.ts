@@ -1,5 +1,6 @@
 import type { CurrencyCode } from './currencies';
 import { supabase } from './supabase';
+import { TripNotFoundError } from './errors';
 import type {
   DebtTransfer,
   Expense,
@@ -164,6 +165,17 @@ export function putTripIdInUrl(tripId: string): void {
   }
 }
 
+export function clearTripId(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.delete(TRIP_URL_PARAM);
+  window.history.replaceState(null, '', url.toString());
+  try {
+    window.localStorage.removeItem(LAST_TRIP_KEY);
+  } catch {
+    // Clearing the URL still lets this session create another trip.
+  }
+}
+
 export function getMe(tripId: string): string | null {
   try {
     return window.localStorage.getItem(ME_KEY_PREFIX + tripId);
@@ -209,31 +221,32 @@ export async function createTrip(
   return { trip, members, expenses: [], payments: [], transfers: [] };
 }
 
-export async function loadTripBundle(tripId: string): Promise<TripBundle> {
+export async function loadTripBundle(tripId: string, signal?: AbortSignal): Promise<TripBundle> {
   const client = db();
+  const requestSignal = signal ?? new AbortController().signal;
   const [tripResult, membersResult, expensesResult, paymentsResult, transfersResult] =
     await Promise.all([
-    client.from('trips').select().eq('id', tripId).maybeSingle(),
-    client.from('members').select().eq('trip_id', tripId).order('created_at'),
+    client.from('trips').select().eq('id', tripId).abortSignal(requestSignal).maybeSingle(),
+    client.from('members').select().eq('trip_id', tripId).order('created_at').abortSignal(requestSignal),
     client
       .from('expenses')
       .select()
       .eq('trip_id', tripId)
       .order('spent_at', { ascending: false })
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false }).abortSignal(requestSignal),
     client
       .from('payments')
       .select()
       .eq('trip_id', tripId)
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false }).abortSignal(requestSignal),
     client
       .from('debt_transfers')
       .select()
       .eq('trip_id', tripId)
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false }).abortSignal(requestSignal),
   ]);
   if (tripResult.error) throw new Error(tripResult.error.message);
-  if (!tripResult.data) throw new Error('Trip not found — double-check the invite link.');
+  if (!tripResult.data) throw new TripNotFoundError();
   if (membersResult.error) throw new Error(membersResult.error.message);
   if (expensesResult.error) throw new Error(expensesResult.error.message);
   if (paymentsResult.error) throw new Error(paymentsResult.error.message);

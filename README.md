@@ -103,7 +103,19 @@ scripts/        gen-icon.mjs (dependency-free PNG icon generator)
 
 ## Known tradeoffs
 
-- Requires connectivity; no offline queue.
+- Trip data is cached per trip and backend in localStorage after successful
+  reads and writes. Cached data opens immediately; the server refresh runs in
+  the background, including on reconnect and when returning to the app.
+  Failed refreshes keep the snapshot visible with its last full-refresh time
+  and a Retry action. Requests time out after 12 seconds and are cancelled.
+  A successful Retry also restores realtime subscriptions after initial failure.
+- The cache is a last-known snapshot, not a guarantee of current balances.
+  Writes require connectivity and are never queued offline. The app shell is
+  not cached by a service worker, so a fully offline cold launch is not guaranteed.
+- On the expenses tab, the existing Add button floats above the bottom tabs
+  at the right content edge, with unchanged dimensions and iPhone safe-area spacing.
+- The app shell also reserves the iOS status-bar/notch safe area at the top;
+  bottom sheets and navigation respect the home indicator and landscape side insets.
 - Anyone with the link can edit anything (fine for friends; delete the trip row
   after the trip to lock it down).
 - FX rates update daily, and the rate field is editable so you can enter the

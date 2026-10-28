@@ -649,11 +649,11 @@ export default function BalanceTab({
 
       {payAs && rates && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40"
+          className="safe-sheet-overlay fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40"
           onClick={() => setPayAs(null)}
         >
           <div
-            className="w-full max-w-md rounded-t-2xl bg-white p-4 pb-6"
+            className="safe-sheet w-full max-w-md rounded-t-2xl bg-white p-4"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-bold text-slate-900">Перевести в…</h3>
