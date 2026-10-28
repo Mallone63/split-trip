@@ -5,7 +5,14 @@ import {
   suggestSettlements,
   type Settlement,
 } from '../lib/balances';
-import { CURRENCY_CODES, formatMinor, fromMinor, type CurrencyCode } from '../lib/currencies';
+import {
+  CURRENCY_CODES,
+  formatMinor,
+  fromMinor,
+  parseAmount,
+  toMinor,
+  type CurrencyCode,
+} from '../lib/currencies';
 import { crossRate, fetchRates, type Rates } from '../lib/fx';
 import type { Expense, Member, Payment } from '../lib/types';
 
@@ -45,6 +52,11 @@ export default function BalanceTab({
     () => [...payments].sort((a, b) => (a.createdAt ?? a.id).localeCompare(b.createdAt ?? b.id)),
     [payments],
   );
+
+  // Inline partial-settlement form: which settlement is open and what is typed.
+  const [partialKey, setPartialKey] = useState<string | null>(null);
+  const [partialAmount, setPartialAmount] = useState('');
+  const [partialError, setPartialError] = useState<string | null>(null);
 
   // Live rates for the small multi-currency hints. The canonical amount stays
   // in the base currency; hints are informational (today's rate) and simply
@@ -100,6 +112,30 @@ export default function BalanceTab({
     await onMarkSettled(from.memberIds[0], to.memberIds[0], settlement.amountMinor);
   }
 
+  async function submitPartial(settlement: Settlement) {
+    const entered = parseAmount(partialAmount);
+    if (!Number.isFinite(entered) || entered <= 0) {
+      setPartialError('Введите сумму больше нуля');
+      return;
+    }
+    const amountMinor = toMinor(entered, baseCurrency);
+    if (amountMinor > settlement.amountMinor) {
+      setPartialError('Сумма не может превышать задолженность');
+      return;
+    }
+    const from = wallets.find((w) => w.key === settlement.fromMemberId);
+    const to = wallets.find((w) => w.key === settlement.toMemberId);
+    if (!from || !to) return;
+    setPartialError(null);
+    try {
+      await onMarkSettled(from.memberIds[0], to.memberIds[0], amountMinor);
+      setPartialKey(null);
+      setPartialAmount('');
+    } catch (err) {
+      setPartialError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-2xl bg-white p-4 shadow-sm">
@@ -152,35 +188,100 @@ export default function BalanceTab({
           <ul className="space-y-2">
             {settlements.map((settlement, index) => {
               const alt = altAmounts(settlement.amountMinor);
+              const settlementKey = `${settlement.fromMemberId}-${settlement.toMemberId}-${index}`;
+              const isPartialOpen = partialKey === settlementKey;
+              const entered = parseAmount(partialAmount);
+              const enteredMinor =
+                Number.isFinite(entered) && entered > 0 ? toMinor(entered, baseCurrency) : null;
               return (
-                <li
-                  key={`${settlement.fromMemberId}-${settlement.toMemberId}-${index}`}
-                  className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2"
-                >
-                  <span className="min-w-0 text-sm text-slate-700">
-                    <strong>{labelOf(settlement.fromMemberId)}</strong>
-                    {' → '}
-                    <strong>{labelOf(settlement.toMemberId)}</strong>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    <span className="text-right">
-                      <span className="block text-sm font-semibold text-slate-900">
-                        {formatMinor(settlement.amountMinor, baseCurrency)}
-                      </span>
-                      {alt && (
-                        <span className="block text-[10px] leading-tight text-slate-400">
-                          {alt}
-                        </span>
-                      )}
+                <li key={settlementKey} className="rounded-lg bg-slate-50 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 text-sm text-slate-700">
+                      <strong>{labelOf(settlement.fromMemberId)}</strong>
+                      {' → '}
+                      <strong>{labelOf(settlement.toMemberId)}</strong>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => void markSettled(settlement)}
-                      className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white"
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="text-right">
+                        <span className="block text-sm font-semibold text-slate-900">
+                          {formatMinor(settlement.amountMinor, baseCurrency)}
+                        </span>
+                        {alt && (
+                          <span className="block text-[10px] leading-tight text-slate-400">
+                            {alt}
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void markSettled(settlement)}
+                        className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white"
+                      >
+                        Оплатить
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPartialKey(isPartialOpen ? null : settlementKey);
+                          setPartialAmount('');
+                          setPartialError(null);
+                        }}
+                        className="rounded-full border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600"
+                      >
+                        Частично…
+                      </button>
+                    </span>
+                  </div>
+
+                  {isPartialOpen && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void submitPartial(settlement);
+                      }}
+                      className="mt-2 border-t border-slate-200 pt-2"
                     >
-                      ✓ Оплачено
-                    </button>
-                  </span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={partialAmount}
+                          onChange={(e) => setPartialAmount(e.target.value)}
+                          inputMode="decimal"
+                          autoFocus
+                          placeholder={String(fromMinor(settlement.amountMinor, baseCurrency))}
+                          className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-teal-500 focus:outline-none"
+                        />
+                        <span className="text-xs text-slate-400">{baseCurrency}</span>
+                        <button
+                          type="submit"
+                          disabled={!partialAmount.trim()}
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+                        >
+                          ОК
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPartialKey(null);
+                            setPartialAmount('');
+                            setPartialError(null);
+                          }}
+                          className="text-xs font-medium text-slate-500"
+                        >
+                          Отмена
+                        </button>
+                      </div>
+                      {enteredMinor !== null && (
+                        <p className="mt-1 text-xs text-slate-500">
+                          Внесено {formatMinor(enteredMinor, baseCurrency)}, останется:{' '}
+                          {formatMinor(
+                            Math.max(0, settlement.amountMinor - enteredMinor),
+                            baseCurrency,
+                          )}
+                        </p>
+                      )}
+                      {partialError && <p className="mt-1 text-xs text-red-500">{partialError}</p>}
+                    </form>
+                  )}
                 </li>
               );
             })}
@@ -230,7 +331,8 @@ export default function BalanceTab({
             })}
           </ul>
           <p className="mt-2 text-xs text-slate-400">
-            «Отменить» убирает платёж — задолженность вернётся в балансы.
+            «Отменить» убирает платёж — задолженность вернётся в балансы. Частичные платежи
+            просто добавляются в историю.
           </p>
         </section>
       )}
