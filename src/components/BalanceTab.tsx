@@ -88,6 +88,36 @@ export default function BalanceTab({
   const paymentCcy = (payment: Payment): CurrencyCode =>
     payment.currency && isCurrencyCode(payment.currency) ? payment.currency : baseCurrency;
 
+  // "Только мои" filter: show balances/settlements/payments involving me only.
+  const [mineOnly, setMineOnly] = useState(false);
+
+  // Wallets (and their members) that include the current user.
+  const myWallets = useMemo(
+    () => (meId ? ledgers[0].wallets.filter((w) => w.memberIds.includes(meId)) : []),
+    [ledgers, meId],
+  );
+  const myMemberIds = useMemo(
+    () => new Set(myWallets.flatMap((w) => w.memberIds)),
+    [myWallets],
+  );
+
+  const settlementInvolvesMe = (ledger: Ledger, settlement: Settlement): boolean => {
+    if (!meId) return false;
+    const from = ledger.wallets.find((w) => w.key === settlement.fromMemberId);
+    const to = ledger.wallets.find((w) => w.key === settlement.toMemberId);
+    return (from?.memberIds.includes(meId) ?? false) || (to?.memberIds.includes(meId) ?? false);
+  };
+
+  const visiblePayments = useMemo(
+    () =>
+      mineOnly
+        ? paymentsSorted.filter(
+            (payment) => myMemberIds.has(payment.payerId) || myMemberIds.has(payment.receiverId),
+          )
+        : paymentsSorted,
+    [paymentsSorted, mineOnly, myMemberIds],
+  );
+
   // Inline partial-settlement form: which settlement is open and what is typed.
   const [partialKey, setPartialKey] = useState<string | null>(null);
   const [partialAmount, setPartialAmount] = useState('');
@@ -186,6 +216,18 @@ export default function BalanceTab({
 
   return (
     <div className="space-y-4">
+      {meId && (
+        <button
+          type="button"
+          onClick={() => setMineOnly((value) => !value)}
+          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+            mineOnly ? 'bg-teal-600 text-white' : 'bg-white text-slate-600 shadow-sm'
+          }`}
+        >
+          {mineOnly ? '✓ Только мои' : 'Только мои'}
+        </button>
+      )}
+
       <section className="rounded-2xl bg-white p-4 shadow-sm">
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -212,7 +254,10 @@ export default function BalanceTab({
           Балансы
         </h2>
         <ul className="divide-y divide-slate-100">
-          {ledgers[0].wallets.map((wallet) => {
+          {(mineOnly
+            ? ledgers[0].wallets.filter((wallet) => wallet.memberIds.includes(meId ?? ''))
+            : ledgers[0].wallets
+          ).map((wallet) => {
             const label = wallet.memberIds.includes(meId ?? '')
               ? `${wallet.label} (вы)`
               : wallet.label;
@@ -252,24 +297,40 @@ export default function BalanceTab({
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
           Предлагаемые расчёты
         </h2>
-        {ledgers.every((ledger) => ledger.settlements.length === 0) ? (
+        {ledgers.every(
+          (ledger) =>
+            ledger.settlements.filter(
+              (settlement) => !mineOnly || settlementInvolvesMe(ledger, settlement),
+            ).length === 0,
+        ) ? (
           <p className="text-sm text-slate-500">
-            {expenses.length === 0 ? 'Расходов пока нет.' : 'Все в расчёте 🎉'}
+            {expenses.length === 0
+              ? 'Расходов пока нет.'
+              : mineOnly
+                ? 'Расчётов с вашим участием нет.'
+                : 'Все в расчёте 🎉'}
           </p>
         ) : (
           <div className="space-y-4">
-            {ledgers.map((ledger) =>
-              ledger.settlements.length === 0 ? null : (
+            {ledgers.map((ledger) => {
+              const visible = mineOnly
+                ? ledger.settlements.filter((settlement) =>
+                    settlementInvolvesMe(ledger, settlement),
+                  )
+                : ledger.settlements;
+              if (visible.length === 0) return null;
+              return (
                 <div key={ledger.currency}>
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
                     {CURRENCIES[ledger.currency].symbol} {ledger.currency}
                   </p>
                   <ul className="space-y-2">
-                    {ledger.settlements.map((settlement, index) => {
+                    {visible.map((settlement, index) => {
                       const alt = altAmounts(settlement.amountMinor, ledger.currency);
                       const settlementKey = `${ledger.currency}-${settlement.fromMemberId}-${settlement.toMemberId}-${index}`;
                       const isPartialOpen = partialKey === settlementKey;
                       const preview = partialPreview(settlement, ledger.currency);
+                      const involvesMe = settlementInvolvesMe(ledger, settlement);
                       return (
                         <li key={settlementKey} className="rounded-lg bg-slate-50 px-3 py-2.5">
                           <div className="flex items-baseline justify-between gap-2">
@@ -289,26 +350,28 @@ export default function BalanceTab({
                               )}
                             </span>
                           </div>
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void markSettled(ledger.currency, settlement)}
-                              className="rounded-lg bg-emerald-600 px-3 py-2.5 text-sm font-semibold text-white active:bg-emerald-700"
-                            >
-                              Погасить полностью
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPartialKey(isPartialOpen ? null : settlementKey);
-                                setPartialAmount('');
-                                setPartialError(null);
-                              }}
-                              className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 active:bg-slate-100"
-                            >
-                              Погасить частично
-                            </button>
-                          </div>
+                          {involvesMe && (
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void markSettled(ledger.currency, settlement)}
+                                className="rounded-lg bg-emerald-600 px-3 py-2.5 text-sm font-semibold text-white active:bg-emerald-700"
+                              >
+                                Погасить полностью
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPartialKey(isPartialOpen ? null : settlementKey);
+                                  setPartialAmount('');
+                                  setPartialError(null);
+                                }}
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 active:bg-slate-100"
+                              >
+                                Погасить частично
+                              </button>
+                            </div>
+                          )}
 
                           {isPartialOpen && (
                             <form
@@ -362,8 +425,8 @@ export default function BalanceTab({
                     })}
                   </ul>
                 </div>
-              ),
-            )}
+              );
+            })}
           </div>
         )}
         <p className="mt-3 text-xs text-slate-400">
@@ -372,49 +435,55 @@ export default function BalanceTab({
         </p>
       </section>
 
-      {paymentsSorted.length > 0 && (
-        <section className="rounded-2xl bg-white p-4 shadow-sm">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-            Отмеченные расчёты
-          </h2>
-          <ul className="divide-y divide-slate-100">
-            {paymentsSorted.map((payment) => {
-              const ccy = paymentCcy(payment);
-              const alt = altAmounts(payment.amountMinor, ccy);
-              return (
-                <li key={payment.id} className="flex items-center justify-between py-2">
-                  <span className="min-w-0 text-sm text-slate-700">
-                    <strong>{memberName(payment.payerId)}</strong>
-                    {' → '}
-                    <strong>{memberName(payment.receiverId)}</strong>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    <span className="text-right">
-                      <span className="block text-sm text-emerald-600">
-                        ✓ {formatMinor(payment.amountMinor, ccy)}
-                      </span>
-                      {alt && (
-                        <span className="block text-[10px] leading-tight text-slate-400">
-                          {alt}
-                        </span>
-                      )}
+      {mineOnly && visiblePayments.length === 0 ? (
+        <p className="rounded-2xl bg-white px-4 py-3 text-xs text-slate-400 shadow-sm">
+          Платежей с вашим участием нет.
+        </p>
+      ) : (
+        visiblePayments.length > 0 && (
+          <section className="rounded-2xl bg-white p-4 shadow-sm">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Отмеченные расчёты
+            </h2>
+            <ul className="divide-y divide-slate-100">
+              {visiblePayments.map((payment) => {
+                const ccy = paymentCcy(payment);
+                const alt = altAmounts(payment.amountMinor, ccy);
+                return (
+                  <li key={payment.id} className="flex items-center justify-between py-2">
+                    <span className="min-w-0 text-sm text-slate-700">
+                      <strong>{memberName(payment.payerId)}</strong>
+                      {' → '}
+                      <strong>{memberName(payment.receiverId)}</strong>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => void onUndoPayment(payment.id)}
-                      className="text-xs font-medium text-red-500"
-                    >
-                      отменить
-                    </button>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="mt-2 text-xs text-slate-400">
-            «Отменить» убирает платёж — задолженность вернётся в балансы.
-          </p>
-        </section>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="text-right">
+                        <span className="block text-sm text-emerald-600">
+                          ✓ {formatMinor(payment.amountMinor, ccy)}
+                        </span>
+                        {alt && (
+                          <span className="block text-[10px] leading-tight text-slate-400">
+                            {alt}
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void onUndoPayment(payment.id)}
+                        className="text-xs font-medium text-red-500"
+                      >
+                        отменить
+                      </button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="mt-2 text-xs text-slate-400">
+              «Отменить» убирает платёж — задолженность вернётся в балансы.
+            </p>
+          </section>
+        )
       )}
     </div>
   );
