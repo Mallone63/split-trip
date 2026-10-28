@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   addDebtTransfer,
   addExpense,
   addMember,
   addPayment,
+  clearTripId,
   deleteDebtTransfer,
   deleteExpense,
   deletePayment,
   getMe,
   getTripIdFromUrl,
   linkWallet,
-  loadTripBundle,
   putTripIdInUrl,
   setMe,
   subscribeToExpenses,
@@ -21,7 +21,8 @@ import {
   type TripBundle,
 } from './lib/api';
 import { supabaseConfigured } from './lib/supabase';
-import { errorMessage } from './lib/errors';
+import { useTripLoader } from './lib/useTripLoader';
+import { writeTripCache } from './lib/tripCache';
 import { initializePwa } from './lib/pwa';
 import { CURRENCIES, type CurrencyCode } from './lib/currencies';
 import BalanceTab from './components/BalanceTab';
@@ -33,78 +34,41 @@ import SetupScreen from './components/SetupScreen';
 import TabBar, { type Tab } from './components/TabBar';
 
 function Shell({ children }: { children: ReactNode }) {
-  return <div className="mx-auto min-h-dvh max-w-md px-4 pb-24 pt-6">{children}</div>;
+  return <div className="mx-auto min-h-dvh max-w-md px-4 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-6">{children}</div>;
 }
 
 export default function App() {
   const [tripId, setTripId] = useState<string | null>(() => (supabaseConfigured ? getTripIdFromUrl() : null));
-  const [bundle, setBundle] = useState<TripBundle | null>(null);
-  const [tripLoaded, setTripLoaded] = useState(false);
-  const [loading, setLoading] = useState(Boolean(tripId));
-  const [error, setError] = useState<string | null>(null);
+  const { bundle, refreshing, error, updatedAt, refresh, invalidate, setBundle } = useTripLoader(tripId);
+  const tripLoaded = Boolean(bundle);
   const [tab, setTab] = useState<Tab>('balances');
   const [addingExpense, setAddingExpense] = useState(false);
   const [meId, setMeIdState] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (!tripId) return;
-    try {
-      setBundle(await loadTripBundle(tripId));
-    } catch (err) {
-      setError(errorMessage(err));
-    }
-  }, [tripId]);
-
   useEffect(() => {
-    if (!tripId) return;
-    let active = true;
-    setLoading(true);
-    loadTripBundle(tripId)
-      .then((data) => {
-        if (!active) return;
-        setBundle(data);
-        setTripLoaded(true);
-        setMeIdState(getMe(tripId));
-        // Remember the trip for ordinary visits. Installed apps keep ?trip=
-        // in their launch URL and do not depend on sharing Safari's storage.
-        putTripIdInUrl(tripId);
-      })
-      .catch((err) => {
-        if (active) setError(errorMessage(err));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [tripId]);
+    if (!tripId || !tripLoaded) return;
+    setMeIdState(getMe(tripId));
+    putTripIdInUrl(tripId);
+  }, [tripId, tripLoaded]);
 
   useEffect(() => {
     if (!tripId || !tripLoaded) return;
     const unsubscribe = [
-      subscribeToExpenses(tripId, () => {
-        void refresh();
-      }),
-      subscribeToPayments(tripId, () => {
-        void refresh();
-      }),
-      subscribeToTransfers(tripId, () => {
-        void refresh();
-      }),
+      subscribeToExpenses(tripId, invalidate),
+      subscribeToPayments(tripId, invalidate),
+      subscribeToTransfers(tripId, invalidate),
     ];
     return () => {
       unsubscribe.forEach((fn) => fn());
     };
-  }, [tripId, tripLoaded, refresh]);
+  }, [tripId, tripLoaded, invalidate]);
 
   function handleCreated(created: TripBundle) {
     putTripIdInUrl(created.trip.id);
     initializePwa();
+    writeTripCache(created);
     setTripId(created.trip.id);
     setMeIdState(getMe(created.trip.id));
-    setBundle(created);
-    setTripLoaded(true);
   }
 
   async function handleAddExpense(input: NewExpenseInput) {
@@ -227,15 +191,15 @@ export default function App() {
     );
   }
 
-  if (loading) {
+  if (tripId && !bundle && !error) {
     return (
       <Shell>
-        <p className="mt-24 text-center text-sm text-slate-400">Loading trip…</p>
+        <p className="mt-24 text-center text-sm text-slate-400">Загружаем поездку…</p>
       </Shell>
     );
   }
 
-  if (error) {
+  if (error && !bundle) {
     return (
       <Shell>
         <div className="mt-24 rounded-2xl bg-white p-6 text-center shadow-sm">
@@ -243,23 +207,22 @@ export default function App() {
           <div className="mt-4 flex justify-center gap-3">
             <button
               type="button"
-              onClick={() => {
-                setError(null);
-                setTripLoaded(false);
-                void refresh();
-              }}
+              onClick={() => void refresh()}
               className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
             >
-              Retry
+              Повторить
             </button>
-            {tripId && (
-              <a
-                href="/"
-                className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Start a new trip
-              </a>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                clearTripId();
+                initializePwa();
+                setTripId(null);
+              }}
+              className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Начать новую поездку
+            </button>
           </div>
         </div>
       </Shell>
@@ -282,6 +245,20 @@ export default function App() {
           {CURRENCIES[bundle.trip.baseCurrency].symbol} {bundle.trip.baseCurrency}
         </span>
       </header>
+
+      {(refreshing || error) && (
+        <div role="status" className="mb-4 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">
+          {error ? (
+            <>
+              <p>{error}</p>
+              <p className="mt-1">Показаны сохранённые данные{updatedAt !== null && ` от ${new Date(updatedAt).toLocaleString('ru-RU')}`}.</p>
+              <button type="button" onClick={() => void refresh()} className="mt-2 font-semibold text-teal-700">
+                Повторить обновление
+              </button>
+            </>
+          ) : 'Показаны сохранённые данные. Обновляем…'}
+        </div>
+      )}
 
       <main>
         {tab === 'balances' && (

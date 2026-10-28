@@ -28,6 +28,10 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
 - `src/lib/` — pure money math: `currencies.ts`, `fx.ts`, `split.ts`, `balances.ts`.
   Keep these functions pure and covered by tests in `src/lib/__tests__/`.
 - `src/lib/api.ts` — all Supabase access + trip-link / "me" localStorage persistence.
+- `src/lib/tripCache.ts`, `tripLoader.ts`, `useTripLoader.ts` — validated local
+  snapshots, cancellable/timeout-bounded loads, and React lifecycle integration.
+  Preserve cached data on transient failure; clear it on confirmed not-found.
+  Keep Retry on the same loading path as initial load so subscriptions recover.
 - `src/components/` — one component per file, mobile-first Tailwind, max-w-md layout.
 - `supabase/schema.sql` — single source of truth for the DB (tables + permissive RLS + realtime).
 

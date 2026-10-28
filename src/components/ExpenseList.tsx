@@ -91,13 +91,13 @@ export default function ExpenseList({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-14">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Расходы</h2>
         <button
           type="button"
           onClick={onAdd}
-          className="rounded-full bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow"
+          className="expense-add fixed z-10 rounded-full bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow"
         >
           + Добавить
         </button>
