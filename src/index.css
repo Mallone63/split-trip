@@ -10,14 +10,39 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* viewport-fit=cover + black-translucent lets standalone iOS draw underneath
+   the status bar/notch. Keep the background full-bleed and inset the controls. */
+.app-shell {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 1.5rem);
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 6rem);
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+}
+
 /* Keep tab bar clear of the iPhone home indicator. */
 .pb-safe {
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.25rem);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
 }
 
 /* Same button dimensions; align with the content's right edge above the tabs.
    Extra list padding lets the last row scroll fully above this floating button. */
 .expense-add {
-  right: max(1rem, calc((100vw - 28rem) / 2 + 1rem));
+  right: max(1rem, env(safe-area-inset-right, 0px), calc((100vw - 28rem) / 2 + 1rem));
   bottom: calc(env(safe-area-inset-bottom, 0px) + 4.5rem);
+}
+
+/* Fixed sheets do not inherit the shell's padding. Keep their actions above
+   the home indicator, and scroll tall sheets within the safe viewport. */
+.safe-sheet-overlay {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 1rem);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
+.safe-sheet {
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 1rem);
+  overflow-y: auto;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1.5rem);
 }

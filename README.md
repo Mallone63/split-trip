@@ -114,6 +114,8 @@ scripts/        gen-icon.mjs (dependency-free PNG icon generator)
   not cached by a service worker, so a fully offline cold launch is not guaranteed.
 - On the expenses tab, the existing Add button floats above the bottom tabs
   at the right content edge, with unchanged dimensions and iPhone safe-area spacing.
+- The app shell also reserves the iOS status-bar/notch safe area at the top;
+  bottom sheets and navigation respect the home indicator and landscape side insets.
 - Anyone with the link can edit anything (fine for friends; delete the trip row
   after the trip to lock it down).
 - FX rates update daily, and the rate field is editable so you can enter the

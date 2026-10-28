@@ -34,7 +34,7 @@ import SetupScreen from './components/SetupScreen';
 import TabBar, { type Tab } from './components/TabBar';
 
 function Shell({ children }: { children: ReactNode }) {
-  return <div className="mx-auto min-h-dvh max-w-md px-4 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pt-6">{children}</div>;
+  return <div className="app-shell mx-auto min-h-dvh max-w-md">{children}</div>;
 }
 
 export default function App() {
