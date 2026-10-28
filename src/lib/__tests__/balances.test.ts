@@ -26,125 +26,150 @@ function mkExpense(partial: Partial<Expense> & { payerId: string; splits: Expens
 }
 
 describe('computeBalances', () => {
-  it('computes mixed-currency balances and always sums to zero', () => {
+  it('counts ledger splits 1:1 and never applies the frozen fxRate', () => {
+    // Regression: fxRate is frozen against the TRIP base (e.g. ¥ per ₽ at entry
+    // time) and must never leak into a same-currency ledger.
     const expenses: Expense[] = [
-      // Ana pays $60, split among all 4 → $15 each.
+      // Ana pays ₽9,800.00 for all 4 → ₽2,450.00 each.
       mkExpense({
         payerId: 'ana',
-        currency: 'USD',
-        amountMinor: 6000,
-        fxRate: 1,
+        currency: 'RUB',
+        amountMinor: 980000,
+        fxRate: 1.9599, // stale RUB→JPY rate stored on the expense
         splits: [
-          { memberId: 'ana', amountMinor: 1500 },
-          { memberId: 'ben', amountMinor: 1500 },
-          { memberId: 'carl', amountMinor: 1500 },
-          { memberId: 'dana', amountMinor: 1500 },
+          { memberId: 'ana', amountMinor: 245000 },
+          { memberId: 'ben', amountMinor: 245000 },
+          { memberId: 'carl', amountMinor: 245000 },
+          { memberId: 'dana', amountMinor: 245000 },
         ],
       }),
-      // Ben pays ¥9,400 at 0.005 USD/JPY → $47; split among all 4 → $11.75 each.
-      mkExpense({
-        payerId: 'ben',
-        currency: 'JPY',
-        amountMinor: 9400,
-        fxRate: 0.005,
-        splits: [
-          { memberId: 'ana', amountMinor: 2350 },
-          { memberId: 'ben', amountMinor: 2350 },
-          { memberId: 'carl', amountMinor: 2350 },
-          { memberId: 'dana', amountMinor: 2350 },
-        ],
-      }),
-      // Ana pays ₽3,000 at 0.01 USD/RUB → $30, but only 3 of 4 took part (no Dana).
+    ];
+
+    const balances = computeBalances(members, expenses);
+    const byId = new Map(balances.map((b) => [b.memberId, b.netMinor]));
+    expect(byId.get('ana')).toBe(735000); // paid 9800, owes 2450 → +7350 (not ×1.9599)
+    expect(byId.get('ben')).toBe(-245000);
+    expect(byId.get('carl')).toBe(-245000);
+    expect(byId.get('dana')).toBe(-245000);
+    expect(balances.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
+  });
+
+  it('keeps separate ledgers independent: each currency nets inside itself', () => {
+    const expenses: Expense[] = [
+      // RUB ledger: Ana pays ₽3,000.00, 3 of 4 took part → ₽1,000.00 each.
       mkExpense({
         payerId: 'ana',
         currency: 'RUB',
         amountMinor: 300000,
-        fxRate: 0.01,
         splits: [
           { memberId: 'ana', amountMinor: 100000 },
           { memberId: 'ben', amountMinor: 100000 },
           { memberId: 'carl', amountMinor: 100000 },
         ],
       }),
+      // USD ledger: Ben pays $12.00 for all 4 → $3.00 each.
+      mkExpense({
+        payerId: 'ben',
+        currency: 'USD',
+        amountMinor: 1200,
+        splits: [
+          { memberId: 'ana', amountMinor: 300 },
+          { memberId: 'ben', amountMinor: 300 },
+          { memberId: 'carl', amountMinor: 300 },
+          { memberId: 'dana', amountMinor: 300 },
+        ],
+      }),
     ];
 
-    const balances = computeBalances(members, expenses, 'USD');
+    const rub = computeBalances(
+      members,
+      expenses.filter((e) => e.currency === 'RUB'),
+    );
+    const rubById = new Map(rub.map((b) => [b.memberId, b.netMinor]));
+    expect(rubById.get('ana')).toBe(200000); // paid 3000, owes 1000 → +2000
+    expect(rubById.get('dana')).toBe(0); // not in the splits → owes nothing here
+    expect(rub.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
+
+    const usd = computeBalances(
+      members,
+      expenses.filter((e) => e.currency === 'USD'),
+    );
+    const usdById = new Map(usd.map((b) => [b.memberId, b.netMinor]));
+    expect(usdById.get('ben')).toBe(900); // paid 12.00, owes 3.00 → +9.00
+    expect(usdById.get('ana')).toBe(-300);
+    expect(usd.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
+  });
+
+  it('nets payments toward zero; an overpayment flips the debtor into a creditor', () => {
+    const balances = computeBalances(
+      members,
+      [
+        mkExpense({
+          payerId: 'ana',
+          amountMinor: 3000,
+          splits: [
+            { memberId: 'ana', amountMinor: 1000 },
+            { memberId: 'ben', amountMinor: 1000 },
+            { memberId: 'carl', amountMinor: 1000 },
+          ],
+        }),
+      ],
+      // Carl owed $10.00 but paid $15.00 (no change available) → now +5.00.
+      [{ id: 'p1', tripId: 't', payerId: 'carl', receiverId: 'ana', amountMinor: 1500 }],
+    );
     const byId = new Map(balances.map((b) => [b.memberId, b.netMinor]));
-
-    // Ana: paid 90.00, owes 15 + 11.75 + 10 = 36.75 → +53.25
-    expect(byId.get('ana')).toBe(5325);
-    // Ben: paid 47.00, owes 36.75 → +10.25
-    expect(byId.get('ben')).toBe(1025);
-    // Carl: owes everything → −36.75
-    expect(byId.get('carl')).toBe(-3675);
-    // Dana: skipped the ₽ expense → −26.75
-    expect(byId.get('dana')).toBe(-2675);
-
-    const sum = balances.reduce((acc, b) => acc + b.netMinor, 0);
-    expect(sum).toBe(0);
+    expect(byId.get('ana')).toBe(500); // +2000, received 1500
+    expect(byId.get('ben')).toBe(-1000); // untouched
+    expect(byId.get('carl')).toBe(500); // owed 1000, paid 1500 → now owed back
+    expect(byId.get('dana')).toBe(0);
+    expect(balances.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
   });
 
   it('returns zero balances when there are no expenses', () => {
-    const balances = computeBalances(members, [], 'USD');
+    const balances = computeBalances(members, []);
     expect(balances).toEqual(members.map((m) => ({ memberId: m.id, netMinor: 0 })));
   });
 });
 
 describe('suggestSettlements', () => {
-  it('settles the mixed-currency scenario with minimal transfers', () => {
+  it('settles the ledger with minimal transfers', () => {
     const balances = computeBalances(members, [
+      // Ana pays $60.00 for all 4 → $15.00 each.
       mkExpense({
         payerId: 'ana',
+        amountMinor: 6000,
         splits: [
           { memberId: 'ana', amountMinor: 1500 },
           { memberId: 'ben', amountMinor: 1500 },
           { memberId: 'carl', amountMinor: 1500 },
           { memberId: 'dana', amountMinor: 1500 },
         ],
-        amountMinor: 6000,
       }),
-      mkExpense({
-        payerId: 'ben',
-        currency: 'JPY',
-        amountMinor: 9400,
-        fxRate: 0.005,
-        splits: [
-          { memberId: 'ana', amountMinor: 2350 },
-          { memberId: 'ben', amountMinor: 2350 },
-          { memberId: 'carl', amountMinor: 2350 },
-          { memberId: 'dana', amountMinor: 2350 },
-        ],
-      }),
+      // Ana pays $30.00, only 3 of 4 took part (no Dana) → $10.00 each.
       mkExpense({
         payerId: 'ana',
-        currency: 'RUB',
-        amountMinor: 300000,
-        fxRate: 0.01,
+        amountMinor: 3000,
         splits: [
-          { memberId: 'ana', amountMinor: 100000 },
-          { memberId: 'ben', amountMinor: 100000 },
-          { memberId: 'carl', amountMinor: 100000 },
+          { memberId: 'ana', amountMinor: 1000 },
+          { memberId: 'ben', amountMinor: 1000 },
+          { memberId: 'carl', amountMinor: 1000 },
         ],
       }),
-    ], 'USD');
+    ]);
 
     const settlements = suggestSettlements(balances);
     const total = settlements.reduce((acc, s) => acc + s.amountMinor, 0);
-    // Total owed = 36.75 + 26.75 = 63.50
-    expect(total).toBe(6350);
-    expect(settlements.length).toBeLessThanOrEqual(members.length - 1);
-
-    // Applying the settlements must zero out every balance.
-    const net = new Map(balances.map((b) => [b.memberId, b.netMinor]));
-    for (const s of settlements) {
-      net.set(s.fromMemberId, (net.get(s.fromMemberId) ?? 0) + s.amountMinor);
-      net.set(s.toMemberId, (net.get(s.toMemberId) ?? 0) - s.amountMinor);
-    }
-    expect([...net.values()].every((v) => v === 0)).toBe(true);
+    // Total owed = 25.00 + 25.00 + 15.00 = 65.00, all to Ana.
+    expect(total).toBe(6500);
+    expect(settlements).toEqual([
+      { fromMemberId: 'ben', toMemberId: 'ana', amountMinor: 2500 },
+      { fromMemberId: 'carl', toMemberId: 'ana', amountMinor: 2500 },
+      { fromMemberId: 'dana', toMemberId: 'ana', amountMinor: 1500 },
+    ]);
   });
 
   it('returns no settlements when everyone is even', () => {
-    const balances = computeBalances(members, [], 'USD');
+    const balances = computeBalances(members, []);
     expect(suggestSettlements(balances)).toEqual([]);
   });
 
@@ -153,49 +178,51 @@ describe('suggestSettlements', () => {
       { memberId: 'ana', netMinor: 1200 },
       { memberId: 'ben', netMinor: -1200 },
     ]);
-    expect(settlements).toEqual([{ fromMemberId: 'ben', toMemberId: 'ana', amountMinor: 1200 }]);
+    expect(settlements).toEqual([
+      { fromMemberId: 'ben', toMemberId: 'ana', amountMinor: 1200 },
+    ]);
   });
-});
 
-describe('computeBalances with payments', () => {
-  it('marks Denis as paid while Pasha still owes, and keeps everything zero-sum', () => {
-    // Ana (paired with Ben) covered a 50.00 bill for Denis and Pasha.
+  it('wallets settle as one; partial payment leaves one debtor', () => {
     const pairedMembers: Member[] = [
+      { id: 'denis', tripId: 't', name: 'Denis', unit: 'u1' },
       { id: 'ana', tripId: 't', name: 'Ana', unit: 'u1' },
-      { id: 'ben', tripId: 't', name: 'Ben', unit: 'u1' },
-      { id: 'denis', tripId: 't', name: 'Denis', unit: null },
       { id: 'pasha', tripId: 't', name: 'Pasha', unit: null },
+      { id: 'ben', tripId: 't', name: 'Ben', unit: null },
     ];
-    const expenses = [
-      mkExpense({
-        payerId: 'ana',
-        amountMinor: 5000,
-        splits: [
-          { memberId: 'denis', amountMinor: 2500 },
-          { memberId: 'pasha', amountMinor: 2500 },
-        ],
-      }),
-    ];
-    const payments = [
-      { id: 'p1', tripId: 't', payerId: 'denis', receiverId: 'ana', amountMinor: 2500 },
-    ];
-
-    const balances = computeBalances(pairedMembers, expenses, 'USD', payments);
+    const balances = computeBalances(
+      pairedMembers,
+      [
+        // Pasha pays $50.00 for all 4 → $12.50 each.
+        mkExpense({
+          payerId: 'pasha',
+          amountMinor: 5000,
+          splits: [
+            { memberId: 'denis', amountMinor: 1250 },
+            { memberId: 'ana', amountMinor: 1250 },
+            { memberId: 'pasha', amountMinor: 1250 },
+            { memberId: 'ben', amountMinor: 1250 },
+          ],
+        }),
+      ],
+      // Ben already settled his share.
+      [{ id: 'p1', tripId: 't', payerId: 'ben', receiverId: 'pasha', amountMinor: 1250 }],
+    );
     const byId = new Map(balances.map((b) => [b.memberId, b.netMinor]));
-    expect(byId.get('denis')).toBe(0); // Denis paid — settled
-    expect(byId.get('pasha')).toBe(-2500); // Pasha has not — still owes
-    expect(byId.get('ana')).toBe(2500);
-    expect(byId.get('ben')).toBe(0);
+    expect(byId.get('ben')).toBe(0); // paid — settled
+    expect(byId.get('pasha')).toBe(2500); // was owed 37.50, received 12.50 → still owed 25.00
+    expect(byId.get('denis')).toBe(-1250);
+    expect(byId.get('ana')).toBe(-1250);
     expect(balances.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
 
-    // The wallet still shows the outstanding debt, and only Pasha is suggested.
+    // The wallet still shows the outstanding debt, and only u1 is suggested.
     const wallets = aggregateByUnit(pairedMembers, balances);
-    expect(wallets.find((w) => w.key === 'u1')?.netMinor).toBe(2500);
+    expect(wallets.find((w) => w.key === 'u1')?.netMinor).toBe(-2500);
     const settlements = suggestSettlements(
       wallets.map((w) => ({ memberId: w.key, netMinor: w.netMinor })),
     );
     expect(settlements).toEqual([
-      { fromMemberId: 'solo:pasha', toMemberId: 'u1', amountMinor: 2500 },
+      { fromMemberId: 'u1', toMemberId: 'solo:pasha', amountMinor: 2500 },
     ]);
   });
 });
@@ -209,21 +236,17 @@ describe('aggregateByUnit', () => {
 
   it('merges a couple into one wallet, labels it, and keeps wallets zero-sum', () => {
     // Ana pays 100.00 for all three: shares 33.34 / 33.33 / 33.33.
-    const balances = computeBalances(
-      pairedMembers,
-      [
-        mkExpense({
-          payerId: 'ana',
-          amountMinor: 10000,
-          splits: [
-            { memberId: 'ana', amountMinor: 3334 },
-            { memberId: 'ben', amountMinor: 3333 },
-            { memberId: 'carl', amountMinor: 3333 },
-          ],
-        }),
-      ],
-      'USD',
-    );
+    const balances = computeBalances(pairedMembers, [
+      mkExpense({
+        payerId: 'ana',
+        amountMinor: 10000,
+        splits: [
+          { memberId: 'ana', amountMinor: 3334 },
+          { memberId: 'ben', amountMinor: 3333 },
+          { memberId: 'carl', amountMinor: 3333 },
+        ],
+      }),
+    ]);
 
     const wallets = aggregateByUnit(pairedMembers, balances);
     const byKey = new Map(wallets.map((w) => [w.key, w]));
@@ -237,20 +260,16 @@ describe('aggregateByUnit', () => {
 
   it('credits the shared wallet when one partner pays for someone outside it', () => {
     // Ana (of the u1 couple) pays 50.00; participants: Ana and Carl only.
-    const balances = computeBalances(
-      pairedMembers,
-      [
-        mkExpense({
-          payerId: 'ana',
-          amountMinor: 5000,
-          splits: [
-            { memberId: 'ana', amountMinor: 2500 },
-            { memberId: 'carl', amountMinor: 2500 },
-          ],
-        }),
-      ],
-      'USD',
-    );
+    const balances = computeBalances(pairedMembers, [
+      mkExpense({
+        payerId: 'ana',
+        amountMinor: 5000,
+        splits: [
+          { memberId: 'ana', amountMinor: 2500 },
+          { memberId: 'carl', amountMinor: 2500 },
+        ],
+      }),
+    ]);
 
     const wallets = aggregateByUnit(pairedMembers, balances);
     expect(wallets.find((w) => w.key === 'u1')?.netMinor).toBe(2500);

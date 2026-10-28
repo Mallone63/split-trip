@@ -38,12 +38,14 @@ export interface Expense {
   createdAt?: string;
 }
 
-/** Settling up: payer repaid receiver (base-currency minor units). */
+/** Settling up: payer repaid receiver. Debts are tracked per currency, so a
+ * payment belongs to one currency ledger (null = legacy trip base currency). */
 export interface Payment {
   id: string;
   tripId: string;
   payerId: string;
   receiverId: string;
   amountMinor: number;
+  currency?: string | null;
   createdAt?: string;
 }

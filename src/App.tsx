@@ -19,6 +19,7 @@ import {
 } from './lib/api';
 import { supabaseConfigured } from './lib/supabase';
 import { errorMessage } from './lib/errors';
+import { CURRENCIES, type CurrencyCode } from './lib/currencies';
 import BalanceTab from './components/BalanceTab';
 import ExpenseForm from './components/ExpenseForm';
 import ExpenseList from './components/ExpenseList';
@@ -151,9 +152,14 @@ export default function App() {
     );
   }
 
-  async function handleMarkSettled(payerId: string, receiverId: string, amountMinor: number) {
+  async function handleMarkSettled(
+    payerId: string,
+    receiverId: string,
+    amountMinor: number,
+    currency: CurrencyCode,
+  ) {
     if (!tripId) return;
-    const payment = await addPayment(tripId, payerId, receiverId, amountMinor);
+    const payment = await addPayment(tripId, payerId, receiverId, amountMinor, currency);
     setBundle((current) =>
       current ? { ...current, payments: [payment, ...current.payments] } : current,
     );
@@ -234,7 +240,7 @@ export default function App() {
       <header className="mb-4 flex items-center justify-between gap-2">
         <h1 className="truncate text-xl font-bold text-slate-900">{bundle.trip.name}</h1>
         <span className="shrink-0 rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-semibold text-teal-700">
-          in {bundle.trip.baseCurrency}
+          {CURRENCIES[bundle.trip.baseCurrency].symbol} {bundle.trip.baseCurrency}
         </span>
       </header>
 

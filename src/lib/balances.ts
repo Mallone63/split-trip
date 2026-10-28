@@ -1,10 +1,8 @@
-import type { CurrencyCode } from './currencies';
-import { toBaseMinor } from './fx';
 import type { Expense, Member, Payment } from './types';
 
 export interface Balance {
   memberId: string;
-  /** Net position in base-currency minor units: positive = is owed money, negative = owes. */
+  /** Net position in the ledger currency's minor units: positive = is owed money, negative = owes. */
   netMinor: number;
 }
 
@@ -15,24 +13,25 @@ export interface Settlement {
 }
 
 /**
- * Net balance per member in the trip's base currency.
+ * Net balance per member inside one currency ledger.
  *
- * Each split is converted to the base currency independently, and the payer is credited
- * with exactly the sum of those conversions. Recorded payments (settling up) move the
- * nets back toward zero. Balances always sum to zero, no matter how currencies mix.
+ * Debts live in the currency the expense was paid in, so every expense passed
+ * in must already be of the ledger's currency (BalanceTab filters them per
+ * ledger) and splits are counted 1:1 — never via fxRate, which is frozen
+ * against the trip base and must not leak into the ledger. Recorded payments
+ * (settling up, same currency) move the nets back toward zero. Balances always
+ * sum to exactly zero inside the ledger.
  */
 export function computeBalances(
   members: Member[],
   expenses: Expense[],
-  baseCurrency: CurrencyCode,
   payments: Payment[] = [],
 ): Balance[] {
   const net = new Map<string, number>(members.map((member) => [member.id, 0]));
   for (const expense of expenses) {
     for (const split of expense.splits) {
-      const shareBase = toBaseMinor(split.amountMinor, expense.fxRate, expense.currency, baseCurrency);
-      net.set(split.memberId, (net.get(split.memberId) ?? 0) - shareBase);
-      net.set(expense.payerId, (net.get(expense.payerId) ?? 0) + shareBase);
+      net.set(split.memberId, (net.get(split.memberId) ?? 0) - split.amountMinor);
+      net.set(expense.payerId, (net.get(expense.payerId) ?? 0) + split.amountMinor);
     }
   }
   for (const payment of payments) {

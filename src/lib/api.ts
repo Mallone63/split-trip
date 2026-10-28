@@ -68,6 +68,7 @@ interface DbPayment {
   payer_id: string;
   receiver_id: string;
   amount: number;
+  currency: string | null;
   created_at: string;
 }
 
@@ -78,6 +79,7 @@ function mapPayment(row: DbPayment): Payment {
     payerId: row.payer_id,
     receiverId: row.receiver_id,
     amountMinor: Number(row.amount),
+    currency: row.currency ?? null,
     createdAt: row.created_at,
   };
 }
@@ -276,12 +278,13 @@ export function subscribeToPayments(tripId: string, onChange: () => void): () =>
   };
 }
 
-/** Record that `payerId` repaid `receiverId` (base-currency minor units). */
+/** Record that `payerId` repaid `receiverId` in the given ledger currency. */
 export async function addPayment(
   tripId: string,
   payerId: string,
   receiverId: string,
   amountMinor: number,
+  currency: string,
 ): Promise<Payment> {
   const client = db();
   const { data, error } = await client
@@ -291,6 +294,7 @@ export async function addPayment(
       payer_id: payerId,
       receiver_id: receiverId,
       amount: amountMinor,
+      currency,
     })
     .select()
     .single();

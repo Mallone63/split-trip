@@ -53,6 +53,10 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
 - Shared wallets: `members.unit` groups people (e.g. a couple). Splits stay
   per-person; balances/settlements aggregate per wallet via `aggregateByUnit`.
 - Settling up: recorded in the `payments` table (never by deleting/editing
-  expenses — history is immutable). `computeBalances(members, expenses,
-  baseCurrency, payments)` nets expenses minus payments; always zero-sum.
+  expenses — history is immutable). Debts are tracked **per currency ledger**:
+  a ledger = expenses of that currency + payments of the same currency
+  (computeBalances at rate 1:1; zero-sum inside each ledger). All ledgers are
+  shown at once — no tabs/switcher; zero amounts omit the currency name.
+  Overpaying a settlement is allowed: the excess automatically becomes a
+  reverse debt via payment netting. `payments.currency` null = legacy trip base.
 - Definition of done: `npm test` and `npm run build` both green.

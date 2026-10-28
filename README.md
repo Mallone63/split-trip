@@ -36,8 +36,9 @@ The app shows setup instructions in place until `VITE_SUPABASE_URL` and
 
 1. Create a free project at [supabase.com](https://supabase.com).
 2. SQL Editor → run [`supabase/schema.sql`](supabase/schema.sql).
-   Already deployed before the shared-wallet feature? Run:
+   Already deployed earlier? Run:
    `alter table public.members add column if not exists unit text;`
+   `alter table public.payments add column if not exists currency text;`
 3. Project Settings → API → copy the URL and the anon key into `.env`.
 
 ## Tests & build

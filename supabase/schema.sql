@@ -53,12 +53,14 @@ alter publication supabase_realtime add table public.expenses;
 
 -- Payments: settling up without touching expense history. A payment moves money
 -- from payer (debtor) to receiver (creditor) and reduces both nets toward zero.
+-- Debts are tracked per currency: a payment belongs to the ledger of `currency`.
 create table public.payments (
   id uuid primary key default gen_random_uuid(),
   trip_id uuid not null references public.trips (id) on delete cascade,
   payer_id uuid not null references public.members (id) on delete cascade,
   receiver_id uuid not null references public.members (id) on delete cascade,
-  amount numeric not null check (amount > 0), -- integer minor units of the base currency
+  amount numeric not null check (amount > 0), -- integer minor units of `currency`
+  currency text, -- ledger currency (null = legacy trip base currency)
   created_at timestamptz not null default now()
 );
 
