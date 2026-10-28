@@ -22,6 +22,7 @@ import {
 } from './lib/api';
 import { supabaseConfigured } from './lib/supabase';
 import { errorMessage } from './lib/errors';
+import { initializePwa } from './lib/pwa';
 import { CURRENCIES, type CurrencyCode } from './lib/currencies';
 import BalanceTab from './components/BalanceTab';
 import ExpenseForm from './components/ExpenseForm';
@@ -64,8 +65,8 @@ export default function App() {
         setBundle(data);
         setTripLoaded(true);
         setMeIdState(getMe(tripId));
-        // Remember the trip for every visitor (not only the creator): PWA launches
-        // open the manifest start_url without ?trip=, so localStorage is the fallback.
+        // Remember the trip for ordinary visits. Installed apps keep ?trip=
+        // in their launch URL and do not depend on sharing Safari's storage.
         putTripIdInUrl(tripId);
       })
       .catch((err) => {
@@ -99,6 +100,7 @@ export default function App() {
 
   function handleCreated(created: TripBundle) {
     putTripIdInUrl(created.trip.id);
+    initializePwa();
     setTripId(created.trip.id);
     setMeIdState(getMe(created.trip.id));
     setBundle(created);

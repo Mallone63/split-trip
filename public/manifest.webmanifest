@@ -2,7 +2,6 @@
   "name": "Trip Split",
   "short_name": "Trip Split",
   "description": "Track shared trip expenses and settle up.",
-  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0f766e",
