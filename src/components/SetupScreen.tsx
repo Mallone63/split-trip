@@ -53,6 +53,10 @@ export default function SetupScreen({ onCreated }: Props) {
         <p className="mt-1 text-sm text-slate-500">
           Вы получите ссылку — любой, кто её откроет, сможет смотреть и добавлять расходы.
         </p>
+        <p className="mt-2 text-xs text-slate-400">
+          Уже участвуете в поездке? Откройте её ссылку ещё раз — приложение запомнит её, и иконка
+          на экране «Домой» будет открывать именно её.
+        </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl bg-white p-4 shadow-sm">

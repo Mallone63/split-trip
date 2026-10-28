@@ -57,6 +57,9 @@ export default function App() {
         setBundle(data);
         setTripLoaded(true);
         setMeIdState(getMe(tripId));
+        // Remember the trip for every visitor (not only the creator): PWA launches
+        // open the manifest start_url without ?trip=, so localStorage is the fallback.
+        putTripIdInUrl(tripId);
       })
       .catch((err) => {
         if (active) setError(errorMessage(err));
