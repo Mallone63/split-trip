@@ -44,6 +44,14 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('balances');
   const [addingExpense, setAddingExpense] = useState(false);
   const [meId, setMeIdState] = useState<string | null>(null);
+  const [showRefreshNotice, setShowRefreshNotice] = useState(false);
+
+  useEffect(() => {
+    setShowRefreshNotice(false);
+    if (!refreshing) return;
+    const timer = window.setTimeout(() => setShowRefreshNotice(true), 1500);
+    return () => window.clearTimeout(timer);
+  }, [refreshing, tripId]);
 
   useEffect(() => {
     if (!tripId || !tripLoaded) return;
@@ -75,7 +83,7 @@ export default function App() {
     if (!tripId) return;
     const expense = await addExpense(tripId, input);
     setBundle((current) =>
-      current ? { ...current, expenses: [expense, ...current.expenses] } : current,
+      current ? { ...current, expenses: [expense, ...current.expenses.filter((row) => row.id !== expense.id)] } : current,
     );
     setTab('expenses');
     setAddingExpense(false);
@@ -94,7 +102,7 @@ export default function App() {
     if (!tripId || !bundle) throw new Error('Trip is not loaded');
     const member = await addMember(tripId, name);
     setBundle((current) =>
-      current ? { ...current, members: [...current.members, member] } : current,
+      current ? { ...current, members: [...current.members.filter((row) => row.id !== member.id), member] } : current,
     );
     return member;
   }
@@ -134,7 +142,7 @@ export default function App() {
     if (!tripId) return;
     const payment = await addPayment(tripId, payerId, receiverId, amountMinor, currency, paid);
     setBundle((current) =>
-      current ? { ...current, payments: [payment, ...current.payments] } : current,
+      current ? { ...current, payments: [payment, ...current.payments.filter((row) => row.id !== payment.id)] } : current,
     );
   }
 
@@ -166,7 +174,7 @@ export default function App() {
       targetAmountMinor,
     );
     setBundle((current) =>
-      current ? { ...current, transfers: [transfer, ...current.transfers] } : current,
+      current ? { ...current, transfers: [transfer, ...current.transfers.filter((row) => row.id !== transfer.id)] } : current,
     );
   }
 
@@ -246,7 +254,7 @@ export default function App() {
         </span>
       </header>
 
-      {(refreshing || error) && (
+      {((refreshing && showRefreshNotice) || error) && (
         <div role="status" className="mb-4 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">
           {error ? (
             <>

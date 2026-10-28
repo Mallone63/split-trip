@@ -77,7 +77,7 @@ export class TripLoader {
         reject(new Error('Загрузка отменена'));
       }, { once: true });
       timer = setTimeout(() => {
-        reject(new Error('Сервер не ответил за 12 секунд. Проверьте соединение и повторите загрузку.'));
+        reject(new Error('Не удалось загрузить данные за 12 секунд. Проверьте соединение и повторите загрузку.'));
         controller.abort();
       }, this.timeoutMs);
       // Also bounds a loader that does not react to AbortSignal (e.g. auth waits).

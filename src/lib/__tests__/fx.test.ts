@@ -1,8 +1,19 @@
-import { describe, expect, it } from 'vitest';
-import { crossRate, toBaseMinor } from '../fx';
+import { describe, expect, it, vi } from 'vitest';
+import { crossRate, suggestRate, toBaseMinor } from '../fx';
 import { fromMinor, parseAmount, toMinor, type CurrencyCode } from '../currencies';
 
 const RATES = { USD: 1, JPY: 157.9, RUB: 80.5, EUR: 0.9 };
+
+it('can enter expenses in the base currency without contacting the exchange-rate service', async () => {
+  const fetch = vi.fn().mockRejectedValue(new Error('offline'));
+  vi.stubGlobal('fetch', fetch);
+  try {
+    expect(await suggestRate('JPY', 'JPY')).toBe(1);
+    expect(fetch).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
 
 describe('crossRate', () => {
   it('returns 1 for identical currencies', () => {

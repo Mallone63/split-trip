@@ -37,6 +37,16 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('trip snapshot cache', () => {
+  it('repairs cached duplicate rows left by older realtime/save races', () => {
+    const original = bundle();
+    writeTripCache({ ...original,
+      members: [...original.members, ...original.members],
+      expenses: [...original.expenses, ...original.expenses],
+      payments: [...original.payments, ...original.payments],
+      transfers: [...original.transfers, ...original.transfers],
+    }, 123);
+    expect(readTripCache('trip-a')).toEqual({ bundle: original, updatedAt: 123 });
+  });
   it('round-trips all ledgers and isolates trips', () => {
     writeTripCache(bundle(), 123);
     expect(readTripCache('trip-a')).toEqual({ bundle: bundle(), updatedAt: 123 });

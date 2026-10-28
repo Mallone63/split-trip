@@ -44,6 +44,13 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
   Do not "simplify" it to `amount × fxRate`.
 - Splits are fully materialized in `expenses.splits` at entry time (equal split
   computed up front; remainder cents go to the payer).
+  If the payer is not a participant, allocate the remainder to the first selected
+  participants instead; the shares must still sum to the full expense.
+- Realtime may deliver a successful write before its API response arrives.
+  Merge inserted rows by ID, including members/payments/transfers; never append
+  an already-present ID. Cached snapshots may contain duplicates from old clients.
+- `BalanceTab` ledger memoization must depend on `transfers` as well as expenses,
+  payments and members, including transfer creation/undo without other changes.
 - `vite.config.ts` uses `base: './'` and `index.html` references public assets
   relatively — required for GitHub Pages project sites. Do not use absolute paths.
 - `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are build-time env vars. Without
