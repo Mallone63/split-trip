@@ -97,7 +97,7 @@ export default function BalanceTab({
           settlements,
         };
       }),
-    [members, expenses, payments, baseCurrency],
+    [members, expenses, payments, transfers, baseCurrency],
   );
 
   const paymentsSorted = useMemo(

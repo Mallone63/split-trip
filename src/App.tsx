@@ -75,7 +75,7 @@ export default function App() {
     if (!tripId) return;
     const expense = await addExpense(tripId, input);
     setBundle((current) =>
-      current ? { ...current, expenses: [expense, ...current.expenses] } : current,
+      current ? { ...current, expenses: [expense, ...current.expenses.filter((row) => row.id !== expense.id)] } : current,
     );
     setTab('expenses');
     setAddingExpense(false);
@@ -94,7 +94,7 @@ export default function App() {
     if (!tripId || !bundle) throw new Error('Trip is not loaded');
     const member = await addMember(tripId, name);
     setBundle((current) =>
-      current ? { ...current, members: [...current.members, member] } : current,
+      current ? { ...current, members: [...current.members.filter((row) => row.id !== member.id), member] } : current,
     );
     return member;
   }
@@ -134,7 +134,7 @@ export default function App() {
     if (!tripId) return;
     const payment = await addPayment(tripId, payerId, receiverId, amountMinor, currency, paid);
     setBundle((current) =>
-      current ? { ...current, payments: [payment, ...current.payments] } : current,
+      current ? { ...current, payments: [payment, ...current.payments.filter((row) => row.id !== payment.id)] } : current,
     );
   }
 
@@ -166,7 +166,7 @@ export default function App() {
       targetAmountMinor,
     );
     setBundle((current) =>
-      current ? { ...current, transfers: [transfer, ...current.transfers] } : current,
+      current ? { ...current, transfers: [transfer, ...current.transfers.filter((row) => row.id !== transfer.id)] } : current,
     );
   }
 

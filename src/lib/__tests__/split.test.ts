@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { materializeEqualSplit, sumSplits, validateExactSplit } from '../split';
 
 describe('materializeEqualSplit', () => {
+  it('allocates the remainder when the payer is not one of the participants', () => {
+    const splits = materializeEqualSplit(10001, ['ben', 'carl'], 'ana');
+    expect(splits).toEqual([
+      { memberId: 'ben', amountMinor: 5001 },
+      { memberId: 'carl', amountMinor: 5000 },
+    ]);
+    expect(sumSplits(splits)).toBe(10001);
+  });
   it('splits ¥10,000 across 3 people with the remainder cent going to the payer', () => {
     const splits = materializeEqualSplit(10000, ['ana', 'ben', 'carl'], 'ben');
     expect(sumSplits(splits)).toBe(10000);

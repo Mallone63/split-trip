@@ -18,7 +18,9 @@ export function materializeEqualSplit(totalMinor: number, participantIds: string
 
   const base = Math.floor(totalMinor / unique.length);
   const remainder = totalMinor - base * unique.length;
-  const order = [payerId, ...unique.filter((id) => id !== payerId)];
+  const order = unique.includes(payerId)
+    ? [payerId, ...unique.filter((id) => id !== payerId)]
+    : unique;
 
   return unique.map((memberId) => {
     const index = order.indexOf(memberId);

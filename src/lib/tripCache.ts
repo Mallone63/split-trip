@@ -15,6 +15,15 @@ const amount = (value: unknown) => Number.isSafeInteger(value);
 const currency = (value: unknown) => CURRENCY_CODES.some((code) => code === value);
 const optionalText = (value: unknown) => value == null || text(value);
 
+function uniqueRows<T extends { id: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  });
+}
+
 function validBundle(value: unknown, tripId: string): value is TripBundle {
   if (!object(value) || !object(value.trip) || value.trip.id !== tripId ||
       !text(value.trip.name) || !currency(value.trip.baseCurrency)) return false;
@@ -47,7 +56,13 @@ export function readTripCache(tripId: string): CachedTrip | null {
     if (!object(cached) || cached.version !== 1 ||
         typeof cached.updatedAt !== 'number' || !Number.isFinite(cached.updatedAt) ||
         !validBundle(cached.bundle, tripId)) return null;
-    return { bundle: cached.bundle, updatedAt: cached.updatedAt };
+    // Older clients could cache a row twice when realtime beat a save response.
+    const bundle = cached.bundle;
+    return {
+      bundle: { ...bundle, members: uniqueRows(bundle.members), expenses: uniqueRows(bundle.expenses),
+        payments: uniqueRows(bundle.payments), transfers: uniqueRows(bundle.transfers) },
+      updatedAt: cached.updatedAt,
+    };
   } catch {
     return null;
   }

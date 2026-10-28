@@ -29,6 +29,7 @@ export async function fetchRates(): Promise<Rates> {
 
 /** Live rate suggestion; callers must handle failure (offline) by falling back to manual entry. */
 export async function suggestRate(from: CurrencyCode, to: CurrencyCode): Promise<number> {
+  if (from === to) return 1;
   return crossRate(await fetchRates(), from, to);
 }
 

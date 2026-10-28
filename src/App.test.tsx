@@ -8,19 +8,25 @@ vi.mock('./lib/supabase', () => ({ supabaseConfigured: true, supabase: null }));
 vi.mock('./lib/api', async (original) => ({
   ...await original<typeof import('./lib/api')>(),
   loadTripBundle: vi.fn(),
+  addExpense: vi.fn(),
+  addMember: vi.fn(),
   subscribeToExpenses: vi.fn(() => vi.fn()),
   subscribeToPayments: vi.fn(() => vi.fn()),
   subscribeToTransfers: vi.fn(() => vi.fn()),
 }));
 vi.mock('./lib/fx', async (original) => ({
   ...await original<typeof import('./lib/fx')>(),
-  fetchRates: vi.fn().mockResolvedValue({ base: 'USD', rates: { USD: 1, RUB: 90, JPY: 150 } }),
+  fetchRates: vi.fn().mockResolvedValue({ USD: 1, RUB: 90, JPY: 150 }),
+  suggestRate: vi.fn().mockResolvedValue(1),
 }));
 
 import App from './App';
-import { loadTripBundle, subscribeToExpenses, subscribeToPayments, subscribeToTransfers } from './lib/api';
-import { writeTripCache } from './lib/tripCache';
+import { addExpense, addMember, loadTripBundle, subscribeToExpenses, subscribeToPayments, subscribeToTransfers } from './lib/api';
+import { readTripCache, writeTripCache } from './lib/tripCache';
 import { TRIP_LOAD_TIMEOUT_MS } from './lib/tripLoader';
+import BalanceTab from './components/BalanceTab';
+import { formatMinor } from './lib/currencies';
+import type { Expense, Member } from './lib/types';
 
 const bundle = (name = 'Свежая поездка'): TripBundle => ({
   trip: { id: 'trip-a', name, baseCurrency: 'JPY' },
@@ -36,6 +42,16 @@ function deferred<T>() {
 let container: HTMLDivElement;
 let root: Root;
 const load = vi.mocked(loadTripBundle);
+const members: Member[] = [
+  { id: 'ana', tripId: 'trip-a', name: 'Аня' },
+  { id: 'ben', tripId: 'trip-a', name: 'Бен' },
+];
+const expense: Expense = {
+  id: 'expense-a', tripId: 'trip-a', payerId: 'ana', title: 'Ужин', currency: 'JPY',
+  amountMinor: 1000, fxRate: 1, baseAmountMinor: 1000,
+  splits: [{ memberId: 'ana', amountMinor: 500 }, { memberId: 'ben', amountMinor: 500 }],
+  spentAt: '2026-10-28',
+};
 
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -67,6 +83,14 @@ const click = async (label: string) => {
   expect(button, `button ${label}`).toBeDefined();
   await act(async () => button!.click());
 };
+const chooseTab = (index: number) => act(async () => {
+  (container.querySelectorAll('nav button')[index] as HTMLButtonElement).click();
+});
+const input = (selector: string, value: string) => act(async () => {
+  const element = container.querySelector<HTMLInputElement>(selector)!;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(element, value);
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+});
 
 describe('trip loading UI', () => {
   it('shows cached content during refresh, keeps it on failure, and updates after Retry', async () => {
@@ -133,4 +157,89 @@ describe('trip loading UI', () => {
     expect(container.textContent).toContain('Создать поездку');
   });
 
+});
+
+describe('trip regression audit', () => {
+  it('recalculates balances when only debt transfers change, including undo', async () => {
+    const props = {
+      members, expenses: [expense], payments: [], transfers: [], baseCurrency: 'JPY' as const,
+      meId: null, onMarkSettled: vi.fn(), onUndoPayment: vi.fn(),
+      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+    };
+    const balancesText = () => [...container.querySelectorAll('h2')]
+      .find((h) => h.textContent === 'Балансы')!.parentElement!.textContent;
+    await act(async () => root.render(<BalanceTab {...props} />));
+    expect(balancesText()).toContain(formatMinor(-500, 'JPY'));
+    const transfers = [{ id: 'transfer-a', tripId: 'trip-a', payerId: 'ben', receiverId: 'ana',
+      sourceCurrency: 'JPY' as const, sourceAmountMinor: 500,
+      targetCurrency: 'RUB' as const, targetAmountMinor: 30000 }];
+    await act(async () => root.render(<BalanceTab {...props} transfers={transfers} />));
+    expect(balancesText()).toContain(formatMinor(-30000, 'RUB'));
+    expect(balancesText()).not.toContain(formatMinor(-500, 'JPY'));
+    await act(async () => root.render(<BalanceTab {...props} />));
+    expect(balancesText()).toContain(formatMinor(-500, 'JPY'));
+    expect(balancesText()).not.toContain(formatMinor(-30000, 'RUB'));
+  });
+
+  it('does not duplicate an expense when realtime finishes before its save response', async () => {
+    const initial = { ...bundle(), members };
+    const saved = { ...initial, expenses: [expense] };
+    const response = deferred<Expense>();
+    load.mockResolvedValueOnce(initial).mockResolvedValue(saved);
+    vi.mocked(addExpense).mockImplementationOnce(() => response.promise);
+    await render();
+    await chooseTab(1);
+    await click('+ Добавить');
+    await input('input[placeholder="Ужин в раменной"]', 'Ужин');
+    await input('input[inputmode="decimal"]', '1000');
+    await click('Сохранить расход');
+    expect(addExpense).toHaveBeenCalledTimes(1);
+    await act(async () => vi.mocked(subscribeToExpenses).mock.calls[0][1]());
+    await act(async () => response.resolve(expense));
+    expect(readTripCache('trip-a')?.bundle.expenses).toHaveLength(1);
+    expect(container.querySelectorAll('li')).toHaveLength(1);
+  });
+
+  it('does not duplicate a member when a refresh finishes before the add response', async () => {
+    const initial = { ...bundle(), members: [members[0]] };
+    const response = deferred<Member>();
+    load.mockResolvedValueOnce(initial).mockResolvedValue({ ...initial, members });
+    vi.mocked(addMember).mockImplementationOnce(() => response.promise);
+    await render();
+    await chooseTab(2);
+    await input('input[placeholder="Добавить человека…"]', 'Бен');
+    await act(async () => {
+      container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(addMember).toHaveBeenCalledTimes(1);
+    await act(async () => vi.mocked(subscribeToExpenses).mock.calls[0][1]());
+    await act(async () => response.resolve(members[1]));
+    expect(readTripCache('trip-a')?.bundle.members).toHaveLength(2);
+  });
+
+  it('preserves the selected participant and filters across cached/background loads', async () => {
+    const saved = { ...bundle(), members, expenses: [expense] };
+    writeTripCache(saved);
+    window.localStorage.setItem('tripsplit:me:trip-a', 'ana');
+    load.mockResolvedValue(saved);
+    await render();
+    expect(container.textContent).toContain('Только мои');
+    await chooseTab(1);
+    expect(container.textContent).toContain('Только мои');
+    await act(async () => window.dispatchEvent(new Event('online')));
+    expect(container.textContent).toContain('Только мои');
+    expect(window.localStorage.getItem('tripsplit:me:trip-a')).toBe('ana');
+  });
+
+  it('keeps an unsaved expense form intact during a background refresh', async () => {
+    load.mockResolvedValue({ ...bundle(), members });
+    await render();
+    await chooseTab(1);
+    await click('+ Добавить');
+    await input('input[placeholder="Ужин в раменной"]', 'Черновик');
+    await input('input[inputmode="decimal"]', '1234');
+    await act(async () => window.dispatchEvent(new Event('online')));
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Ужин в раменной"]')?.value).toBe('Черновик');
+    expect(container.querySelector<HTMLInputElement>('input[inputmode="decimal"]')?.value).toBe('1234');
+  });
 });
