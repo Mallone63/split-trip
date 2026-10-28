@@ -74,9 +74,6 @@ export default function BalanceTab({ members, expenses, baseCurrency, meId }: Pr
             );
           })}
         </ul>
-        <p className="mt-2 text-xs text-slate-400">
-          + — этому кошельку должны, − — этот кошелёк должен.
-        </p>
       </section>
 
       <section className="rounded-2xl bg-white p-4 shadow-sm">

@@ -3,7 +3,7 @@ export type Tab = 'balances' | 'expenses' | 'invite';
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'balances', label: 'Балансы', icon: '⚖️' },
   { id: 'expenses', label: 'Расходы', icon: '🧾' },
-  { id: 'invite', label: 'Пригласить', icon: '👥' },
+  { id: 'invite', label: 'Управление', icon: '⚙️' },
 ];
 
 interface Props {
