@@ -142,27 +142,43 @@ export interface NewExpenseInput {
 
 // ---- URL / local storage helpers -----------------------------------------
 
-/** Trip id from the ?trip= URL param, falling back to the last opened trip (for PWA launches). */
+/** The install URL carries the trip; storage is a fallback for ordinary visits. */
 export function getTripIdFromUrl(): string | null {
   const fromUrl = new URLSearchParams(window.location.search).get(TRIP_URL_PARAM);
   if (fromUrl) return fromUrl;
-  return window.localStorage.getItem(LAST_TRIP_KEY);
+  try {
+    return window.localStorage.getItem(LAST_TRIP_KEY);
+  } catch {
+    return null;
+  }
 }
 
 export function putTripIdInUrl(tripId: string): void {
   const url = new URL(window.location.href);
   url.searchParams.set(TRIP_URL_PARAM, tripId);
   window.history.replaceState(null, '', url.toString());
-  window.localStorage.setItem(LAST_TRIP_KEY, tripId);
+  try {
+    window.localStorage.setItem(LAST_TRIP_KEY, tripId);
+  } catch {
+    // The invite URL remains usable when storage is unavailable.
+  }
 }
 
 export function getMe(tripId: string): string | null {
-  return window.localStorage.getItem(ME_KEY_PREFIX + tripId);
+  try {
+    return window.localStorage.getItem(ME_KEY_PREFIX + tripId);
+  } catch {
+    return null;
+  }
 }
 
 export function setMe(tripId: string, memberId: string | null): void {
-  if (memberId === null) window.localStorage.removeItem(ME_KEY_PREFIX + tripId);
-  else window.localStorage.setItem(ME_KEY_PREFIX + tripId, memberId);
+  try {
+    if (memberId === null) window.localStorage.removeItem(ME_KEY_PREFIX + tripId);
+    else window.localStorage.setItem(ME_KEY_PREFIX + tripId, memberId);
+  } catch {
+    // Choosing a participant must not prevent access to the trip.
+  }
 }
 
 // ---- Data access ----------------------------------------------------------

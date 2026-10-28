@@ -15,6 +15,17 @@ whom. Built for one trip, no accounts — the invite link is the access control.
 - **Realtime:** everyone sees new expenses instantly (Supabase realtime).
 - **Install:** iPhone Safari → Share → *Add to Home Screen* → runs standalone.
 
+Open the trip invite link in Safari **before** adding it to the Home Screen.
+The installed app retains that URL (including `?trip=`), because iOS may keep
+Safari and standalone app storage separate. The manifest intentionally omits
+`start_url`, and is linked only after a previously saved trip is restored to
+the page URL. Do not replace this with a fixed root start URL.
+
+If an existing Home Screen icon opens “Начать поездку”, remove that icon,
+open the invite link in Safari, wait for the trip to load, and add it again.
+Removing the icon does not delete the shared trip or its expenses. The local
+“это вы” selection may need to be selected again in the installed app.
+
 ## Stack
 
 React 19 + Vite + TypeScript + Tailwind CSS v4, Supabase (Postgres + realtime),

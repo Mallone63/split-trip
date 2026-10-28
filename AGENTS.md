@@ -47,9 +47,11 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
 - TypeScript is strict with `verbatimModuleSyntax`: use `import type` for
   type-only imports; unused locals/params fail the build.
 - UI is Russian by default (hardcoded strings, no i18n lib); formatters use ru-RU.
-- PWA launches open the manifest `start_url` without `?trip=`. The app falls back
-  to `localStorage` (`tripsplit:lastTrip`), which is written for every visitor
-  after a successful trip load.
+- The manifest deliberately omits `start_url`: installation must retain the
+  document URL including `?trip=`. iOS standalone storage may be separate from
+  Safari's. `src/lib/pwa.ts` restores a saved trip into the URL before attaching
+  the manifest link. Keep that order; do not add a fixed root `start_url`.
+  `localStorage` (`tripsplit:lastTrip`) is only a fallback for ordinary visits.
 - Shared wallets: `members.unit` groups people (e.g. a couple). Splits stay
   per-person; balances/settlements aggregate per wallet via `aggregateByUnit`.
 - Settling up: recorded in the `payments` table (never by deleting/editing
