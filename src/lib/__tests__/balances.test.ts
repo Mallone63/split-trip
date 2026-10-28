@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { aggregateByUnit, computeBalances, suggestSettlements } from '../balances';
-import type { Expense, Member } from '../types';
+import type { DebtTransfer, Expense, Member } from '../types';
 
 const members: Member[] = [
   { id: 'ana', tripId: 't', name: 'Ana' },
@@ -45,7 +45,7 @@ describe('computeBalances', () => {
       }),
     ];
 
-    const balances = computeBalances(members, expenses);
+    const balances = computeBalances(members, expenses, 'RUB');
     const byId = new Map(balances.map((b) => [b.memberId, b.netMinor]));
     expect(byId.get('ana')).toBe(735000); // paid 9800, owes 2450 → +7350 (not ×1.9599)
     expect(byId.get('ben')).toBe(-245000);
@@ -84,6 +84,7 @@ describe('computeBalances', () => {
     const rub = computeBalances(
       members,
       expenses.filter((e) => e.currency === 'RUB'),
+      'RUB',
     );
     const rubById = new Map(rub.map((b) => [b.memberId, b.netMinor]));
     expect(rubById.get('ana')).toBe(200000); // paid 3000, owes 1000 → +2000
@@ -93,6 +94,7 @@ describe('computeBalances', () => {
     const usd = computeBalances(
       members,
       expenses.filter((e) => e.currency === 'USD'),
+      'USD',
     );
     const usdById = new Map(usd.map((b) => [b.memberId, b.netMinor]));
     expect(usdById.get('ben')).toBe(900); // paid 12.00, owes 3.00 → +9.00
@@ -101,6 +103,9 @@ describe('computeBalances', () => {
   });
 
   it('nets payments toward zero; an overpayment flips the debtor into a creditor', () => {
+    const payments = [
+      { id: 'p1', tripId: 't', payerId: 'carl', receiverId: 'ana', amountMinor: 1500 },
+    ];
     const balances = computeBalances(
       members,
       [
@@ -114,8 +119,8 @@ describe('computeBalances', () => {
           ],
         }),
       ],
-      // Carl owed $10.00 but paid $15.00 (no change available) → now +5.00.
-      [{ id: 'p1', tripId: 't', payerId: 'carl', receiverId: 'ana', amountMinor: 1500 }],
+      'USD',
+      payments,
     );
     const byId = new Map(balances.map((b) => [b.memberId, b.netMinor]));
     expect(byId.get('ana')).toBe(500); // +2000, received 1500
@@ -126,7 +131,7 @@ describe('computeBalances', () => {
   });
 
   it('returns zero balances when there are no expenses', () => {
-    const balances = computeBalances(members, []);
+    const balances = computeBalances(members, [], 'USD');
     expect(balances).toEqual(members.map((m) => ({ memberId: m.id, netMinor: 0 })));
   });
 });
@@ -155,7 +160,7 @@ describe('suggestSettlements', () => {
           { memberId: 'carl', amountMinor: 1000 },
         ],
       }),
-    ]);
+    ], 'USD');
 
     const settlements = suggestSettlements(balances);
     const total = settlements.reduce((acc, s) => acc + s.amountMinor, 0);
@@ -169,7 +174,7 @@ describe('suggestSettlements', () => {
   });
 
   it('returns no settlements when everyone is even', () => {
-    const balances = computeBalances(members, []);
+    const balances = computeBalances(members, [], 'USD');
     expect(suggestSettlements(balances)).toEqual([]);
   });
 
@@ -205,6 +210,7 @@ describe('suggestSettlements', () => {
           ],
         }),
       ],
+      'USD',
       // Ben already settled his share.
       [{ id: 'p1', tripId: 't', payerId: 'ben', receiverId: 'pasha', amountMinor: 1250 }],
     );
@@ -223,6 +229,77 @@ describe('suggestSettlements', () => {
     );
     expect(settlements).toEqual([
       { fromMemberId: 'u1', toMemberId: 'solo:pasha', amountMinor: 2500 },
+    ]);
+  });
+});
+
+describe('debt transfers (re-denomination)', () => {
+  const membersWithWallets: Member[] = [
+    { id: 'den', tripId: 't', name: 'Den', unit: null },
+    { id: 'np1', tripId: 't', name: 'Nat', unit: 'np' },
+    { id: 'np2', tripId: 't', name: 'Pav', unit: 'np' },
+  ];
+
+  it('moves the debt between ledgers; both ledgers stay zero-sum', () => {
+    // Den owes the np-wallet 2 000 ¥ (a JPY bill Den did not pay for).
+    const expenses: Expense[] = [
+      mkExpense({
+        payerId: 'np1',
+        currency: 'JPY',
+        amountMinor: 200000,
+        fxRate: 1.9599,
+        splits: [{ memberId: 'den', amountMinor: 200000 }],
+      }),
+    ];
+    const transfers: DebtTransfer[] = [
+      {
+        id: 'tr1',
+        tripId: 't',
+        payerId: 'den',
+        receiverId: 'np1',
+        sourceCurrency: 'JPY',
+        sourceAmountMinor: 200000,
+        targetCurrency: 'RUB',
+        targetAmountMinor: 102000,
+      },
+    ];
+
+    // JPY ledger: expense −200k, transfer source side +200k → closed, all zero.
+    const jpy = computeBalances(membersWithWallets, expenses, 'JPY', [], transfers);
+    expect(jpy.every((b) => b.netMinor === 0)).toBe(true);
+
+    // RUB ledger: transfer target side → Den now owes ₽1,020 to the wallet.
+    const rub = computeBalances(membersWithWallets, [], 'RUB', [], transfers);
+    const byId = new Map(rub.map((b) => [b.memberId, b.netMinor]));
+    expect(byId.get('den')).toBe(-102000);
+    expect(byId.get('np1')).toBe(102000);
+    expect(byId.get('np2')).toBe(0);
+    expect(rub.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
+  });
+
+  it('suggests settling the re-denominated debt in the target ledger', () => {
+    // The JPY debt was transferred to RUB, so the RUB ledger holds it now and
+    // the JPY ledger is clean.
+    const transfers: DebtTransfer[] = [
+      {
+        id: 'tr1',
+        tripId: 't',
+        payerId: 'den',
+        receiverId: 'np1',
+        sourceCurrency: 'JPY',
+        sourceAmountMinor: 200000,
+        targetCurrency: 'RUB',
+        targetAmountMinor: 102000,
+      },
+    ];
+
+    const rub = computeBalances(membersWithWallets, [], 'RUB', [], transfers);
+    const wallets = aggregateByUnit(membersWithWallets, rub);
+    const settlements = suggestSettlements(
+      wallets.map((w) => ({ memberId: w.key, netMinor: w.netMinor })),
+    );
+    expect(settlements).toEqual([
+      { fromMemberId: 'solo:den', toMemberId: 'np', amountMinor: 102000 },
     ]);
   });
 });
@@ -246,7 +323,7 @@ describe('aggregateByUnit', () => {
           { memberId: 'carl', amountMinor: 3333 },
         ],
       }),
-    ]);
+    ], 'USD');
 
     const wallets = aggregateByUnit(pairedMembers, balances);
     const byKey = new Map(wallets.map((w) => [w.key, w]));
@@ -269,7 +346,7 @@ describe('aggregateByUnit', () => {
           { memberId: 'carl', amountMinor: 2500 },
         ],
       }),
-    ]);
+    ], 'USD');
 
     const wallets = aggregateByUnit(pairedMembers, balances);
     expect(wallets.find((w) => w.key === 'u1')?.netMinor).toBe(2500);

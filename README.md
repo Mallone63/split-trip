@@ -39,6 +39,11 @@ The app shows setup instructions in place until `VITE_SUPABASE_URL` and
    Already deployed earlier? Run:
    `alter table public.members add column if not exists unit text;`
    `alter table public.payments add column if not exists currency text;`
+   `alter table public.payments add column if not exists paid_currency text;`
+   `alter table public.payments add column if not exists paid_amount numeric;`
+   And for the debt-transfer feature, create `public.debt_transfers` by copying
+   its block from [`supabase/schema.sql`](supabase/schema.sql) (table + index +
+   RLS policy + realtime publication).
 3. Project Settings → API → copy the URL and the anon key into `.env`.
 
 ## Tests & build

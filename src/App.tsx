@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
+  addDebtTransfer,
   addExpense,
   addMember,
   addPayment,
+  deleteDebtTransfer,
   deleteExpense,
   deletePayment,
   getMe,
@@ -13,6 +15,7 @@ import {
   setMe,
   subscribeToExpenses,
   subscribeToPayments,
+  subscribeToTransfers,
   unlinkWallet,
   type NewExpenseInput,
   type TripBundle,
@@ -83,6 +86,9 @@ export default function App() {
         void refresh();
       }),
       subscribeToPayments(tripId, () => {
+        void refresh();
+      }),
+      subscribeToTransfers(tripId, () => {
         void refresh();
       }),
     ];
@@ -157,9 +163,10 @@ export default function App() {
     receiverId: string,
     amountMinor: number,
     currency: CurrencyCode,
+    paid?: { amountMinor: number; currency: CurrencyCode },
   ) {
     if (!tripId) return;
-    const payment = await addPayment(tripId, payerId, receiverId, amountMinor, currency);
+    const payment = await addPayment(tripId, payerId, receiverId, amountMinor, currency, paid);
     setBundle((current) =>
       current ? { ...current, payments: [payment, ...current.payments] } : current,
     );
@@ -171,6 +178,36 @@ export default function App() {
       current
         ? { ...current, payments: current.payments.filter((p) => p.id !== paymentId) }
         : current,
+    );
+  }
+
+  async function handleAddTransfer(
+    payerId: string,
+    receiverId: string,
+    sourceCurrency: CurrencyCode,
+    sourceAmountMinor: number,
+    targetCurrency: CurrencyCode,
+    targetAmountMinor: number,
+  ) {
+    if (!tripId) return;
+    const transfer = await addDebtTransfer(
+      tripId,
+      payerId,
+      receiverId,
+      sourceCurrency,
+      sourceAmountMinor,
+      targetCurrency,
+      targetAmountMinor,
+    );
+    setBundle((current) =>
+      current ? { ...current, transfers: [transfer, ...current.transfers] } : current,
+    );
+  }
+
+  async function handleUndoTransfer(transferId: string) {
+    await deleteDebtTransfer(transferId);
+    setBundle((current) =>
+      current ? { ...current, transfers: current.transfers.filter((t) => t.id !== transferId) } : current,
     );
   }
 
@@ -250,10 +287,13 @@ export default function App() {
             members={bundle.members}
             expenses={bundle.expenses}
             payments={bundle.payments}
+            transfers={bundle.transfers}
             baseCurrency={bundle.trip.baseCurrency}
             meId={meId}
             onMarkSettled={handleMarkSettled}
             onUndoPayment={handleUndoPayment}
+            onAddTransfer={handleAddTransfer}
+            onUndoTransfer={handleUndoTransfer}
           />
         )}
         {tab === 'expenses' &&

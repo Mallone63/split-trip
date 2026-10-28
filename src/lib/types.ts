@@ -39,7 +39,9 @@ export interface Expense {
 }
 
 /** Settling up: payer repaid receiver. Debts are tracked per currency, so a
- * payment belongs to one currency ledger (null = legacy trip base currency). */
+ * payment belongs to one currency ledger (null = legacy trip base currency).
+ * paidCurrency/paidAmountMinor record what was actually handed over when the
+ * payer settled in a different currency (null = paid in `currency` itself). */
 export interface Payment {
   id: string;
   tripId: string;
@@ -47,5 +49,23 @@ export interface Payment {
   receiverId: string;
   amountMinor: number;
   currency?: string | null;
+  paidCurrency?: string | null;
+  paidAmountMinor?: number | null;
+  createdAt?: string;
+}
+
+/** Debt re-denomination ("хочу оплатить в..."): the payer's debt of
+ * sourceAmountMinor in sourceCurrency closes in that ledger and reopens as
+ * targetAmountMinor in targetCurrency. No money moves — it declares the
+ * currency of the future payment. */
+export interface DebtTransfer {
+  id: string;
+  tripId: string;
+  payerId: string;
+  receiverId: string;
+  sourceCurrency: CurrencyCode;
+  sourceAmountMinor: number;
+  targetCurrency: CurrencyCode;
+  targetAmountMinor: number;
   createdAt?: string;
 }

@@ -16,7 +16,17 @@ import {
   type CurrencyCode,
 } from '../lib/currencies';
 import { crossRate, fetchRates, type Rates } from '../lib/fx';
-import type { Expense, Member, Payment } from '../lib/types';
+import type { DebtTransfer, Expense, Member, Payment } from '../lib/types';
+
+const MINE_ONLY_KEY = 'tripsplit:mineOnly';
+
+function readMineOnlyPref(): boolean {
+  try {
+    return localStorage.getItem(MINE_ONLY_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 type Wallets = ReturnType<typeof aggregateByUnit>;
 
@@ -31,6 +41,7 @@ interface Props {
   members: Member[];
   expenses: Expense[];
   payments: Payment[];
+  transfers: DebtTransfer[];
   /** Trip base currency — fallback for legacy payments without a currency. */
   baseCurrency: CurrencyCode;
   meId: string | null;
@@ -39,18 +50,31 @@ interface Props {
     receiverId: string,
     amountMinor: number,
     currency: CurrencyCode,
+    paid?: { amountMinor: number; currency: CurrencyCode },
   ) => Promise<void>;
   onUndoPayment: (paymentId: string) => Promise<void>;
+  onAddTransfer: (
+    payerId: string,
+    receiverId: string,
+    sourceCurrency: CurrencyCode,
+    sourceAmountMinor: number,
+    targetCurrency: CurrencyCode,
+    targetAmountMinor: number,
+  ) => Promise<void>;
+  onUndoTransfer: (transferId: string) => Promise<void>;
 }
 
 export default function BalanceTab({
   members,
   expenses,
   payments,
+  transfers,
   baseCurrency,
   meId,
   onMarkSettled,
   onUndoPayment,
+  onAddTransfer,
+  onUndoTransfer,
 }: Props) {
   // No tabs: all three currency ledgers are shown at once. A ledger is all
   // expenses of that currency + payments of the same currency (rate 1:1,
@@ -64,7 +88,13 @@ export default function BalanceTab({
             payment.currency && isCurrencyCode(payment.currency) ? payment.currency : baseCurrency;
           return c === currency;
         });
-        const balances = computeBalances(members, ledgerExpenses, ledgerPayments);
+        const balances = computeBalances(
+          members,
+          ledgerExpenses,
+          currency,
+          ledgerPayments,
+          transfers,
+        );
         const wallets = aggregateByUnit(members, balances);
         const settlements = suggestSettlements(
           wallets.map((w) => ({ memberId: w.key, netMinor: w.netMinor })),
@@ -85,11 +115,28 @@ export default function BalanceTab({
     [payments],
   );
 
+  const transfersSorted = useMemo(
+    () =>
+      [...transfers].sort((a, b) => (a.createdAt ?? a.id).localeCompare(b.createdAt ?? b.id)),
+    [transfers],
+  );
+
   const paymentCcy = (payment: Payment): CurrencyCode =>
     payment.currency && isCurrencyCode(payment.currency) ? payment.currency : baseCurrency;
 
   // "Только мои" filter: show balances/settlements/payments involving me only.
-  const [mineOnly, setMineOnly] = useState(false);
+  const [mineOnly, setMineOnly] = useState(readMineOnlyPref);
+  useEffect(() => {
+    try {
+      localStorage.setItem(MINE_ONLY_KEY, mineOnly ? '1' : '0');
+    } catch {
+      /* private mode — the pref just won't persist */
+    }
+  }, [mineOnly]);
+  // "Перевести в…" popup: the settlement being paid in another currency.
+  const [payAs, setPayAs] = useState<{ ledger: Ledger; settlement: Settlement } | null>(null);
+  // Currency chosen inside the partial form (null = the ledger's currency).
+  const [partialCcy, setPartialCcy] = useState<CurrencyCode | null>(null);
 
   // Wallets (and their members) that include the current user.
   const myWallets = useMemo(
@@ -185,47 +232,123 @@ export default function BalanceTab({
     const from = ledger.wallets.find((w) => w.key === settlement.fromMemberId);
     const to = ledger.wallets.find((w) => w.key === settlement.toMemberId);
     if (!from || !to) return;
-    const amountMinor = toMinor(entered, currency);
+    // The amount is typed in `partialCcy`; the debt always shrinks in the
+    // ledger currency, the original input is recorded as "paid in …".
+    const entryCcy = partialCcy ?? currency;
+    let amountMinor = toMinor(entered, entryCcy);
+    let paid: { amountMinor: number; currency: CurrencyCode } | undefined;
+    if (entryCcy !== currency) {
+      if (!rates) {
+        setPartialError(`Курсы недоступны — оплатите в ${currency}`);
+        return;
+      }
+      const converted = toMinor(
+        fromMinor(amountMinor, entryCcy) * crossRate(rates, entryCcy, currency),
+        currency,
+      );
+      if (converted <= 0) {
+        setPartialError('Слишком маленькая сумма для этой валюты');
+        return;
+      }
+      paid = { amountMinor, currency: entryCcy };
+      amountMinor = converted;
+    }
     setPartialError(null);
     try {
       // Overpayment is allowed (e.g. no change available): the excess
       // automatically becomes a reverse debt via payment netting.
-      await onMarkSettled(from.memberIds[0], to.memberIds[0], amountMinor, currency);
+      await onMarkSettled(from.memberIds[0], to.memberIds[0], amountMinor, currency, paid);
       setPartialKey(null);
       setPartialAmount('');
+      setPartialCcy(null);
     } catch (err) {
       setPartialError(err instanceof Error ? err.message : String(err));
     }
   }
 
+  // "Перевести в…": re-denominate the debt into another currency — ONE
+  // debt_transfers record (no money moves; single record = single undo). The
+  // debt closes in the source ledger and opens in the target ledger.
+  async function confirmTransfer(
+    ledger: Ledger,
+    settlement: Settlement,
+    targetCurrency: CurrencyCode,
+    targetAmountMinor: number,
+  ) {
+    const from = ledger.wallets.find((w) => w.key === settlement.fromMemberId);
+    const to = ledger.wallets.find((w) => w.key === settlement.toMemberId);
+    if (!from || !to) return;
+    setPayAs(null);
+    await onAddTransfer(
+      from.memberIds[0],
+      to.memberIds[0],
+      ledger.currency,
+      settlement.amountMinor,
+      targetCurrency,
+      targetAmountMinor,
+    );
+  }
+
   const partialPreview = (settlement: Settlement, currency: CurrencyCode): string => {
     const entered = parseAmount(partialAmount);
     if (!Number.isFinite(entered) || entered <= 0) return '';
-    const amountMinor = toMinor(entered, currency);
-    const diff = settlement.amountMinor - amountMinor;
+    const entryCcy = partialCcy ?? currency;
+    const amountMinor = toMinor(entered, entryCcy);
+    let ledgerAmount = amountMinor;
+    let paidNote = '';
+    if (entryCcy !== currency) {
+      if (!rates) return '';
+      ledgerAmount = toMinor(
+        fromMinor(amountMinor, entryCcy) * crossRate(rates, entryCcy, currency),
+        currency,
+      );
+      if (ledgerAmount <= 0) return '';
+      paidNote = ` (${formatMinor(amountMinor, entryCcy)})`;
+    }
+    const diff = settlement.amountMinor - ledgerAmount;
     if (diff === 0) return 'Долг будет закрыт полностью';
     if (diff > 0) {
-      return `Внесено ${formatMinor(amountMinor, currency)}, останется: ${formatMinor(diff, currency)}`;
+      return `Внесено ${formatMinor(ledgerAmount, currency)}${paidNote}, останется: ${formatMinor(
+        diff,
+        currency,
+      )}`;
     }
-    const over = formatMinor(amountMinor - settlement.amountMinor, currency);
+    const over = formatMinor(ledgerAmount - settlement.amountMinor, currency);
     return `Переплата ${over} — теперь ${labelOf(currency, settlement.toMemberId)} должен ${labelOf(
       currency,
       settlement.fromMemberId,
     )}`;
   };
 
+  // Placeholder: the whole debt in the currency being typed; when it differs
+  // from the ledger currency — an informational "≈" conversion at today's rate.
+  const partialPlaceholder = (
+    settlement: Settlement,
+    currency: CurrencyCode,
+  ): string | undefined => {
+    const entryCcy = partialCcy ?? currency;
+    if (entryCcy === currency) return String(fromMinor(settlement.amountMinor, currency));
+    if (!rates?.[currency] || !rates?.[entryCcy]) return undefined;
+    const equivalent =
+      fromMinor(settlement.amountMinor, currency) * crossRate(rates, currency, entryCcy);
+    return `≈ ${equivalent.toFixed(CURRENCIES[entryCcy].decimals)}`;
+  };
+
   return (
     <div className="space-y-4">
       {meId && (
-        <button
-          type="button"
-          onClick={() => setMineOnly((value) => !value)}
-          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-            mineOnly ? 'bg-teal-600 text-white' : 'bg-white text-slate-600 shadow-sm'
-          }`}
-        >
-          {mineOnly ? '✓ Только мои' : 'Только мои'}
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400">Фильтр:</span>
+          <button
+            type="button"
+            onClick={() => setMineOnly((value) => !value)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+              mineOnly ? 'bg-teal-600 text-white' : 'bg-white text-slate-600 shadow-sm'
+            }`}
+          >
+            Только мои
+          </button>
+        </div>
       )}
 
       <section className="rounded-2xl bg-white p-4 shadow-sm">
@@ -331,6 +454,7 @@ export default function BalanceTab({
                       const isPartialOpen = partialKey === settlementKey;
                       const preview = partialPreview(settlement, ledger.currency);
                       const involvesMe = settlementInvolvesMe(ledger, settlement);
+                      const entryCcy = partialCcy ?? ledger.currency;
                       return (
                         <li key={settlementKey} className="rounded-lg bg-slate-50 px-3 py-2.5">
                           <div className="flex items-baseline justify-between gap-2">
@@ -340,9 +464,20 @@ export default function BalanceTab({
                               <strong>{labelOf(ledger.currency, settlement.toMemberId)}</strong>
                             </span>
                             <span className="shrink-0 text-right">
-                              <span className="block text-sm font-semibold text-slate-900">
-                                {formatMinor(settlement.amountMinor, ledger.currency)}
-                              </span>
+                              {involvesMe && rates ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setPayAs({ ledger, settlement })}
+                                  title="Хочу оплатить в другой валюте"
+                                  className="block text-sm font-semibold text-slate-900 underline decoration-dotted underline-offset-2"
+                                >
+                                  {formatMinor(settlement.amountMinor, ledger.currency)}
+                                </button>
+                              ) : (
+                                <span className="block text-sm font-semibold text-slate-900">
+                                  {formatMinor(settlement.amountMinor, ledger.currency)}
+                                </span>
+                              )}
                               {alt && (
                                 <span className="block text-[10px] leading-tight text-slate-400">
                                   {alt}
@@ -365,6 +500,7 @@ export default function BalanceTab({
                                   setPartialKey(isPartialOpen ? null : settlementKey);
                                   setPartialAmount('');
                                   setPartialError(null);
+                                  setPartialCcy(null);
                                 }}
                                 className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 active:bg-slate-100"
                               >
@@ -381,18 +517,34 @@ export default function BalanceTab({
                               }}
                               className="mt-2 border-t border-slate-200 pt-2"
                             >
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {CURRENCY_CODES.map((c) =>
+                                  !rates && c !== ledger.currency ? null : (
+                                    <button
+                                      key={c}
+                                      type="button"
+                                      onClick={() => setPartialCcy(c)}
+                                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                        entryCcy === c
+                                          ? 'bg-teal-600 text-white'
+                                          : 'border border-slate-300 bg-white text-slate-600'
+                                      }`}
+                                    >
+                                      {CURRENCIES[c].symbol} {c}
+                                    </button>
+                                  ),
+                                )}
+                              </div>
+                              <div className="mt-1.5 flex items-center gap-2">
                                 <input
                                   value={partialAmount}
                                   onChange={(e) => setPartialAmount(e.target.value)}
                                   inputMode="decimal"
                                   autoFocus
-                                  placeholder={String(
-                                    fromMinor(settlement.amountMinor, ledger.currency),
-                                  )}
+                                  placeholder={partialPlaceholder(settlement, ledger.currency)}
                                   className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-teal-500 focus:outline-none"
                                 />
-                                <span className="text-xs text-slate-400">{ledger.currency}</span>
+                                <span className="text-xs text-slate-400">{entryCcy}</span>
                                 <button
                                   type="submit"
                                   disabled={!partialAmount.trim()}
@@ -449,6 +601,12 @@ export default function BalanceTab({
               {visiblePayments.map((payment) => {
                 const ccy = paymentCcy(payment);
                 const alt = altAmounts(payment.amountMinor, ccy);
+                const paidIn =
+                  payment.paidCurrency &&
+                  isCurrencyCode(payment.paidCurrency) &&
+                  payment.paidAmountMinor
+                    ? { currency: payment.paidCurrency, amountMinor: payment.paidAmountMinor }
+                    : null;
                 return (
                   <li key={payment.id} className="flex items-center justify-between py-2">
                     <span className="min-w-0 text-sm text-slate-700">
@@ -460,6 +618,12 @@ export default function BalanceTab({
                       <span className="text-right">
                         <span className="block text-sm text-emerald-600">
                           ✓ {formatMinor(payment.amountMinor, ccy)}
+                          {paidIn && paidIn.currency !== ccy && (
+                            <span className="text-xs font-normal text-slate-400">
+                              {' '}
+                              · оплачено {formatMinor(paidIn.amountMinor, paidIn.currency)}
+                            </span>
+                          )}
                         </span>
                         {alt && (
                           <span className="block text-[10px] leading-tight text-slate-400">
@@ -485,6 +649,92 @@ export default function BalanceTab({
           </section>
         )
       )}
+
+      {payAs && rates && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40"
+          onClick={() => setPayAs(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-t-2xl bg-white p-4 pb-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-slate-900">Перевести в…</h3>
+            <p className="mb-3 mt-1 text-xs text-slate-400">
+              {labelOf(payAs.ledger.currency, payAs.settlement.fromMemberId)} →{' '}
+              {labelOf(payAs.ledger.currency, payAs.settlement.toMemberId)} ·{' '}
+              {formatMinor(payAs.settlement.amountMinor, payAs.ledger.currency)} по сегодняшнему
+              курсу
+            </p>
+            <div className="space-y-2">
+              {CURRENCY_CODES.filter((c) => c !== payAs.ledger.currency).map((c) => {
+                const converted = toMinor(
+                  fromMinor(payAs.settlement.amountMinor, payAs.ledger.currency) *
+                    crossRate(rates, payAs.ledger.currency, c),
+                  c,
+                );
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() =>
+                      void confirmTransfer(payAs.ledger, payAs.settlement, c, converted)
+                    }
+                    className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5 text-sm active:bg-slate-50"
+                  >
+                    <span className="font-semibold text-slate-700">
+                      {CURRENCIES[c].symbol} {c}
+                    </span>
+                    <span className="font-semibold text-slate-900">
+                      ≈ {formatMinor(converted, c)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setPayAs(null)}
+              className="mt-3 w-full rounded-xl bg-slate-100 py-2.5 text-sm font-medium text-slate-600"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
+      <section className="rounded-2xl bg-white p-4 shadow-sm">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Переносы долгов
+        </h2>
+        <ul className="divide-y divide-slate-100">
+          {transfersSorted.map((transfer) => (
+            <li key={transfer.id} className="flex items-center justify-between py-2">
+              <span className="min-w-0 text-sm text-slate-700">
+                <strong>{memberName(transfer.payerId)}</strong>
+                {' должен '}
+                <strong>{memberName(transfer.receiverId)}</strong>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="text-right text-sm text-amber-600">
+                  {formatMinor(transfer.sourceAmountMinor, transfer.sourceCurrency)} →{' '}
+                  {formatMinor(transfer.targetAmountMinor, transfer.targetCurrency)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void onUndoTransfer(transfer.id)}
+                  className="text-xs font-medium text-red-500"
+                >
+                  отменить
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-xs text-slate-400">
+          Перенос объявляет, в какой валюте вы погасите долг. «Отменить» вернёт долг в исходную
+          валюту.
+        </p>
+      </section>
     </div>
   );
 }

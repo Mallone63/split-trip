@@ -58,5 +58,8 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
   (computeBalances at rate 1:1; zero-sum inside each ledger). All ledgers are
   shown at once — no tabs/switcher; zero amounts omit the currency name.
   Overpaying a settlement is allowed: the excess automatically becomes a
-  reverse debt via payment netting. `payments.currency` null = legacy trip base.
+  reverse debt via payment netting. A payment may carry `paid_currency` +
+  `paid_amount` — what was actually handed over when settling in another
+  currency (the debt itself still nets in its own ledger; today's fx rate).
+  `payments.currency` null = legacy trip base.
 - Definition of done: `npm test` and `npm run build` both green.

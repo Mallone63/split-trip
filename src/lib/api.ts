@@ -1,6 +1,13 @@
 import type { CurrencyCode } from './currencies';
 import { supabase } from './supabase';
-import type { Expense, Member, Payment, Split, Trip } from './types';
+import type {
+  DebtTransfer,
+  Expense,
+  Member,
+  Payment,
+  Split,
+  Trip,
+} from './types';
 
 const TRIP_URL_PARAM = 'trip';
 const LAST_TRIP_KEY = 'tripsplit:lastTrip';
@@ -69,6 +76,8 @@ interface DbPayment {
   receiver_id: string;
   amount: number;
   currency: string | null;
+  paid_currency: string | null;
+  paid_amount: number | null;
   created_at: string;
 }
 
@@ -80,6 +89,34 @@ function mapPayment(row: DbPayment): Payment {
     receiverId: row.receiver_id,
     amountMinor: Number(row.amount),
     currency: row.currency ?? null,
+    paidCurrency: row.paid_currency ?? null,
+    paidAmountMinor: row.paid_amount == null ? null : Number(row.paid_amount),
+    createdAt: row.created_at,
+  };
+}
+
+interface DbDebtTransfer {
+  id: string;
+  trip_id: string;
+  payer_id: string;
+  receiver_id: string;
+  source_currency: string;
+  source_amount: number;
+  target_currency: string;
+  target_amount: number;
+  created_at: string;
+}
+
+function mapDebtTransfer(row: DbDebtTransfer): DebtTransfer {
+  return {
+    id: row.id,
+    tripId: row.trip_id,
+    payerId: row.payer_id,
+    receiverId: row.receiver_id,
+    sourceCurrency: row.source_currency as CurrencyCode,
+    sourceAmountMinor: Number(row.source_amount),
+    targetCurrency: row.target_currency as CurrencyCode,
+    targetAmountMinor: Number(row.target_amount),
     createdAt: row.created_at,
   };
 }
@@ -89,6 +126,7 @@ export interface TripBundle {
   members: Member[];
   expenses: Expense[];
   payments: Payment[];
+  transfers: DebtTransfer[];
 }
 
 export interface NewExpenseInput {
@@ -152,12 +190,13 @@ export async function createTrip(
 
   const meId = members[0]?.id;
   if (meId) setMe(trip.id, meId);
-  return { trip, members, expenses: [], payments: [] };
+  return { trip, members, expenses: [], payments: [], transfers: [] };
 }
 
 export async function loadTripBundle(tripId: string): Promise<TripBundle> {
   const client = db();
-  const [tripResult, membersResult, expensesResult, paymentsResult] = await Promise.all([
+  const [tripResult, membersResult, expensesResult, paymentsResult, transfersResult] =
+    await Promise.all([
     client.from('trips').select().eq('id', tripId).maybeSingle(),
     client.from('members').select().eq('trip_id', tripId).order('created_at'),
     client
@@ -171,17 +210,24 @@ export async function loadTripBundle(tripId: string): Promise<TripBundle> {
       .select()
       .eq('trip_id', tripId)
       .order('created_at', { ascending: false }),
+    client
+      .from('debt_transfers')
+      .select()
+      .eq('trip_id', tripId)
+      .order('created_at', { ascending: false }),
   ]);
   if (tripResult.error) throw new Error(tripResult.error.message);
   if (!tripResult.data) throw new Error('Trip not found — double-check the invite link.');
   if (membersResult.error) throw new Error(membersResult.error.message);
   if (expensesResult.error) throw new Error(expensesResult.error.message);
   if (paymentsResult.error) throw new Error(paymentsResult.error.message);
+  if (transfersResult.error) throw new Error(transfersResult.error.message);
   return {
     trip: mapTrip(tripResult.data as DbTrip),
     members: (membersResult.data as DbMember[]).map(mapMember),
     expenses: (expensesResult.data as DbExpense[]).map(mapExpense),
     payments: (paymentsResult.data as DbPayment[]).map(mapPayment),
+    transfers: (transfersResult.data as DbDebtTransfer[]).map(mapDebtTransfer),
   };
 }
 
@@ -278,13 +324,16 @@ export function subscribeToPayments(tripId: string, onChange: () => void): () =>
   };
 }
 
-/** Record that `payerId` repaid `receiverId` in the given ledger currency. */
+/** Record that `payerId` repaid `receiverId` in the given ledger currency.
+ * `paid` optionally records the currency actually handed over when it differs
+ * (e.g. the ¥ debt was settled with ₽ cash). */
 export async function addPayment(
   tripId: string,
   payerId: string,
   receiverId: string,
   amountMinor: number,
   currency: string,
+  paid?: { amountMinor: number; currency: string },
 ): Promise<Payment> {
   const client = db();
   const { data, error } = await client
@@ -295,6 +344,8 @@ export async function addPayment(
       receiver_id: receiverId,
       amount: amountMinor,
       currency,
+      paid_amount: paid?.amountMinor ?? null,
+      paid_currency: paid?.currency ?? null,
     })
     .select()
     .single();
@@ -306,5 +357,56 @@ export async function deletePayment(paymentId: string): Promise<void> {
   const client = db();
   const { error } = await client.from('payments').delete().eq('id', paymentId);
   if (error) throw new Error(error.message);
+}
+
+/** Debt re-denomination ("хочу оплатить в..."): the payer's debt of
+ * sourceAmountMinor (sourceCurrency) closes and reopens as targetAmountMinor
+ * in targetCurrency. One record — undo deletes it. */
+export async function addDebtTransfer(
+  tripId: string,
+  payerId: string,
+  receiverId: string,
+  sourceCurrency: string,
+  sourceAmountMinor: number,
+  targetCurrency: string,
+  targetAmountMinor: number,
+): Promise<DebtTransfer> {
+  const client = db();
+  const { data, error } = await client
+    .from('debt_transfers')
+    .insert({
+      trip_id: tripId,
+      payer_id: payerId,
+      receiver_id: receiverId,
+      source_currency: sourceCurrency,
+      source_amount: sourceAmountMinor,
+      target_currency: targetCurrency,
+      target_amount: targetAmountMinor,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return mapDebtTransfer(data as DbDebtTransfer);
+}
+
+export async function deleteDebtTransfer(transferId: string): Promise<void> {
+  const client = db();
+  const { error } = await client.from('debt_transfers').delete().eq('id', transferId);
+  if (error) throw new Error(error.message);
+}
+
+export function subscribeToTransfers(tripId: string, onChange: () => void): () => void {
+  const client = db();
+  const channel = client
+    .channel(`debt-transfers-${tripId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'debt_transfers', filter: `trip_id=eq.${tripId}` },
+      onChange,
+    )
+    .subscribe();
+  return () => {
+    void client.removeChannel(channel);
+  };
 }
 

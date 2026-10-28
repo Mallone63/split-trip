@@ -1,4 +1,5 @@
-import type { Expense, Member, Payment } from './types';
+import type { CurrencyCode } from './currencies';
+import type { DebtTransfer, Expense, Member, Payment } from './types';
 
 export interface Balance {
   memberId: string;
@@ -19,13 +20,17 @@ export interface Settlement {
  * in must already be of the ledger's currency (BalanceTab filters them per
  * ledger) and splits are counted 1:1 — never via fxRate, which is frozen
  * against the trip base and must not leak into the ledger. Recorded payments
- * (settling up, same currency) move the nets back toward zero. Balances always
- * sum to exactly zero inside the ledger.
+ * (settling up, same currency) move the nets back toward zero. Debt transfers
+ * close the debt in the source ledger and open it in the target ledger — the
+ * matching side is applied per ledger. Balances always sum to exactly zero
+ * inside each ledger.
  */
 export function computeBalances(
   members: Member[],
   expenses: Expense[],
+  ledgerCurrency: CurrencyCode,
   payments: Payment[] = [],
+  transfers: DebtTransfer[] = [],
 ): Balance[] {
   const net = new Map<string, number>(members.map((member) => [member.id, 0]));
   for (const expense of expenses) {
@@ -37,6 +42,28 @@ export function computeBalances(
   for (const payment of payments) {
     net.set(payment.payerId, (net.get(payment.payerId) ?? 0) + payment.amountMinor);
     net.set(payment.receiverId, (net.get(payment.receiverId) ?? 0) - payment.amountMinor);
+  }
+  for (const transfer of transfers) {
+    if (transfer.targetCurrency === ledgerCurrency) {
+      net.set(
+        transfer.payerId,
+        (net.get(transfer.payerId) ?? 0) - transfer.targetAmountMinor,
+      );
+      net.set(
+        transfer.receiverId,
+        (net.get(transfer.receiverId) ?? 0) + transfer.targetAmountMinor,
+      );
+    }
+    if (transfer.sourceCurrency === ledgerCurrency) {
+      net.set(
+        transfer.payerId,
+        (net.get(transfer.payerId) ?? 0) + transfer.sourceAmountMinor,
+      );
+      net.set(
+        transfer.receiverId,
+        (net.get(transfer.receiverId) ?? 0) - transfer.sourceAmountMinor,
+      );
+    }
   }
   return members.map((member) => ({ memberId: member.id, netMinor: net.get(member.id) ?? 0 }));
 }
