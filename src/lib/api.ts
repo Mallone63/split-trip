@@ -1,6 +1,6 @@
 import type { CurrencyCode } from './currencies';
 import { supabase } from './supabase';
-import type { Expense, Member, Split, Trip } from './types';
+import type { Expense, Member, Payment, Split, Trip } from './types';
 
 const TRIP_URL_PARAM = 'trip';
 const LAST_TRIP_KEY = 'tripsplit:lastTrip';
@@ -62,10 +62,31 @@ function mapExpense(row: DbExpense): Expense {
   };
 }
 
+interface DbPayment {
+  id: string;
+  trip_id: string;
+  payer_id: string;
+  receiver_id: string;
+  amount: number;
+  created_at: string;
+}
+
+function mapPayment(row: DbPayment): Payment {
+  return {
+    id: row.id,
+    tripId: row.trip_id,
+    payerId: row.payer_id,
+    receiverId: row.receiver_id,
+    amountMinor: Number(row.amount),
+    createdAt: row.created_at,
+  };
+}
+
 export interface TripBundle {
   trip: Trip;
   members: Member[];
   expenses: Expense[];
+  payments: Payment[];
 }
 
 export interface NewExpenseInput {
@@ -129,12 +150,12 @@ export async function createTrip(
 
   const meId = members[0]?.id;
   if (meId) setMe(trip.id, meId);
-  return { trip, members, expenses: [] };
+  return { trip, members, expenses: [], payments: [] };
 }
 
 export async function loadTripBundle(tripId: string): Promise<TripBundle> {
   const client = db();
-  const [tripResult, membersResult, expensesResult] = await Promise.all([
+  const [tripResult, membersResult, expensesResult, paymentsResult] = await Promise.all([
     client.from('trips').select().eq('id', tripId).maybeSingle(),
     client.from('members').select().eq('trip_id', tripId).order('created_at'),
     client
@@ -143,15 +164,22 @@ export async function loadTripBundle(tripId: string): Promise<TripBundle> {
       .eq('trip_id', tripId)
       .order('spent_at', { ascending: false })
       .order('created_at', { ascending: false }),
+    client
+      .from('payments')
+      .select()
+      .eq('trip_id', tripId)
+      .order('created_at', { ascending: false }),
   ]);
   if (tripResult.error) throw new Error(tripResult.error.message);
   if (!tripResult.data) throw new Error('Trip not found — double-check the invite link.');
   if (membersResult.error) throw new Error(membersResult.error.message);
   if (expensesResult.error) throw new Error(expensesResult.error.message);
+  if (paymentsResult.error) throw new Error(paymentsResult.error.message);
   return {
     trip: mapTrip(tripResult.data as DbTrip),
     members: (membersResult.data as DbMember[]).map(mapMember),
     expenses: (expensesResult.data as DbExpense[]).map(mapExpense),
+    payments: (paymentsResult.data as DbPayment[]).map(mapPayment),
   };
 }
 
@@ -231,5 +259,48 @@ export function subscribeToExpenses(tripId: string, onChange: () => void): () =>
   return () => {
     void client.removeChannel(channel);
   };
+}
+
+export function subscribeToPayments(tripId: string, onChange: () => void): () => void {
+  const client = db();
+  const channel = client
+    .channel(`payments-${tripId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'payments', filter: `trip_id=eq.${tripId}` },
+      onChange,
+    )
+    .subscribe();
+  return () => {
+    void client.removeChannel(channel);
+  };
+}
+
+/** Record that `payerId` repaid `receiverId` (base-currency minor units). */
+export async function addPayment(
+  tripId: string,
+  payerId: string,
+  receiverId: string,
+  amountMinor: number,
+): Promise<Payment> {
+  const client = db();
+  const { data, error } = await client
+    .from('payments')
+    .insert({
+      trip_id: tripId,
+      payer_id: payerId,
+      receiver_id: receiverId,
+      amount: amountMinor,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return mapPayment(data as DbPayment);
+}
+
+export async function deletePayment(paymentId: string): Promise<void> {
+  const client = db();
+  const { error } = await client.from('payments').delete().eq('id', paymentId);
+  if (error) throw new Error(error.message);
 }
 

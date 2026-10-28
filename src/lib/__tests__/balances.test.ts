@@ -157,6 +157,49 @@ describe('suggestSettlements', () => {
   });
 });
 
+describe('computeBalances with payments', () => {
+  it('marks Denis as paid while Pasha still owes, and keeps everything zero-sum', () => {
+    // Ana (paired with Ben) covered a 50.00 bill for Denis and Pasha.
+    const pairedMembers: Member[] = [
+      { id: 'ana', tripId: 't', name: 'Ana', unit: 'u1' },
+      { id: 'ben', tripId: 't', name: 'Ben', unit: 'u1' },
+      { id: 'denis', tripId: 't', name: 'Denis', unit: null },
+      { id: 'pasha', tripId: 't', name: 'Pasha', unit: null },
+    ];
+    const expenses = [
+      mkExpense({
+        payerId: 'ana',
+        amountMinor: 5000,
+        splits: [
+          { memberId: 'denis', amountMinor: 2500 },
+          { memberId: 'pasha', amountMinor: 2500 },
+        ],
+      }),
+    ];
+    const payments = [
+      { id: 'p1', tripId: 't', payerId: 'denis', receiverId: 'ana', amountMinor: 2500 },
+    ];
+
+    const balances = computeBalances(pairedMembers, expenses, 'USD', payments);
+    const byId = new Map(balances.map((b) => [b.memberId, b.netMinor]));
+    expect(byId.get('denis')).toBe(0); // Denis paid — settled
+    expect(byId.get('pasha')).toBe(-2500); // Pasha has not — still owes
+    expect(byId.get('ana')).toBe(2500);
+    expect(byId.get('ben')).toBe(0);
+    expect(balances.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
+
+    // The wallet still shows the outstanding debt, and only Pasha is suggested.
+    const wallets = aggregateByUnit(pairedMembers, balances);
+    expect(wallets.find((w) => w.key === 'u1')?.netMinor).toBe(2500);
+    const settlements = suggestSettlements(
+      wallets.map((w) => ({ memberId: w.key, netMinor: w.netMinor })),
+    );
+    expect(settlements).toEqual([
+      { fromMemberId: 'solo:pasha', toMemberId: 'u1', amountMinor: 2500 },
+    ]);
+  });
+});
+
 describe('aggregateByUnit', () => {
   const pairedMembers: Member[] = [
     { id: 'ana', tripId: 't', name: 'Ana', unit: 'u1' },

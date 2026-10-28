@@ -37,3 +37,13 @@ export interface Expense {
   spentAt: string;
   createdAt?: string;
 }
+
+/** Settling up: payer repaid receiver (base-currency minor units). */
+export interface Payment {
+  id: string;
+  tripId: string;
+  payerId: string;
+  receiverId: string;
+  amountMinor: number;
+  createdAt?: string;
+}

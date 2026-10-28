@@ -52,4 +52,7 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
   after a successful trip load.
 - Shared wallets: `members.unit` groups people (e.g. a couple). Splits stay
   per-person; balances/settlements aggregate per wallet via `aggregateByUnit`.
+- Settling up: recorded in the `payments` table (never by deleting/editing
+  expenses — history is immutable). `computeBalances(members, expenses,
+  baseCurrency, payments)` nets expenses minus payments; always zero-sum.
 - Definition of done: `npm test` and `npm run build` both green.

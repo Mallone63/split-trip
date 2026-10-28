@@ -1,6 +1,6 @@
 import type { CurrencyCode } from './currencies';
 import { toBaseMinor } from './fx';
-import type { Expense, Member } from './types';
+import type { Expense, Member, Payment } from './types';
 
 export interface Balance {
   memberId: string;
@@ -18,10 +18,15 @@ export interface Settlement {
  * Net balance per member in the trip's base currency.
  *
  * Each split is converted to the base currency independently, and the payer is credited
- * with exactly the sum of those conversions — so balances always sum to zero, no matter
- * how currencies mix.
+ * with exactly the sum of those conversions. Recorded payments (settling up) move the
+ * nets back toward zero. Balances always sum to zero, no matter how currencies mix.
  */
-export function computeBalances(members: Member[], expenses: Expense[], baseCurrency: CurrencyCode): Balance[] {
+export function computeBalances(
+  members: Member[],
+  expenses: Expense[],
+  baseCurrency: CurrencyCode,
+  payments: Payment[] = [],
+): Balance[] {
   const net = new Map<string, number>(members.map((member) => [member.id, 0]));
   for (const expense of expenses) {
     for (const split of expense.splits) {
@@ -29,6 +34,10 @@ export function computeBalances(members: Member[], expenses: Expense[], baseCurr
       net.set(split.memberId, (net.get(split.memberId) ?? 0) - shareBase);
       net.set(expense.payerId, (net.get(expense.payerId) ?? 0) + shareBase);
     }
+  }
+  for (const payment of payments) {
+    net.set(payment.payerId, (net.get(payment.payerId) ?? 0) + payment.amountMinor);
+    net.set(payment.receiverId, (net.get(payment.receiverId) ?? 0) - payment.amountMinor);
   }
   return members.map((member) => ({ memberId: member.id, netMinor: net.get(member.id) ?? 0 }));
 }

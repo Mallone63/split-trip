@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   addExpense,
   addMember,
+  addPayment,
   deleteExpense,
+  deletePayment,
   getMe,
   getTripIdFromUrl,
   linkWallet,
@@ -10,6 +12,7 @@ import {
   putTripIdInUrl,
   setMe,
   subscribeToExpenses,
+  subscribeToPayments,
   unlinkWallet,
   type NewExpenseInput,
   type TripBundle,
@@ -74,9 +77,17 @@ export default function App() {
 
   useEffect(() => {
     if (!tripId || !tripLoaded) return;
-    return subscribeToExpenses(tripId, () => {
-      void refresh();
-    });
+    const unsubscribe = [
+      subscribeToExpenses(tripId, () => {
+        void refresh();
+      }),
+      subscribeToPayments(tripId, () => {
+        void refresh();
+      }),
+    ];
+    return () => {
+      unsubscribe.forEach((fn) => fn());
+    };
   }, [tripId, tripLoaded, refresh]);
 
   function handleCreated(created: TripBundle) {
@@ -136,6 +147,23 @@ export default function App() {
             ...current,
             members: current.members.map((m) => updated.find((u) => u.id === m.id) ?? m),
           }
+        : current,
+    );
+  }
+
+  async function handleMarkSettled(payerId: string, receiverId: string, amountMinor: number) {
+    if (!tripId) return;
+    const payment = await addPayment(tripId, payerId, receiverId, amountMinor);
+    setBundle((current) =>
+      current ? { ...current, payments: [payment, ...current.payments] } : current,
+    );
+  }
+
+  async function handleUndoPayment(paymentId: string) {
+    await deletePayment(paymentId);
+    setBundle((current) =>
+      current
+        ? { ...current, payments: current.payments.filter((p) => p.id !== paymentId) }
         : current,
     );
   }
@@ -215,8 +243,11 @@ export default function App() {
           <BalanceTab
             members={bundle.members}
             expenses={bundle.expenses}
+            payments={bundle.payments}
             baseCurrency={bundle.trip.baseCurrency}
             meId={meId}
+            onMarkSettled={handleMarkSettled}
+            onUndoPayment={handleUndoPayment}
           />
         )}
         {tab === 'expenses' &&
