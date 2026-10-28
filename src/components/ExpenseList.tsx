@@ -1,0 +1,143 @@
+import { useMemo, useState } from 'react';
+import { formatMinor, type CurrencyCode } from '../lib/currencies';
+import { formatRate } from '../lib/fx';
+import type { Expense, Member } from '../lib/types';
+
+interface Props {
+  expenses: Expense[];
+  members: Member[];
+  baseCurrency: CurrencyCode;
+  onAdd: () => void;
+  onDelete: (expenseId: string) => Promise<void>;
+}
+
+function groupLabel(dateStr: string): string {
+  const today = new Date().toISOString().slice(0, 10);
+  if (dateStr === today) return 'Today';
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+export default function ExpenseList({ expenses, members, baseCurrency, onAdd, onDelete }: Props) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const sorted = useMemo(
+    () =>
+      [...expenses].sort((a, b) =>
+        a.spentAt === b.spentAt
+          ? (b.createdAt ?? b.id).localeCompare(a.createdAt ?? a.id)
+          : b.spentAt.localeCompare(a.spentAt),
+      ),
+    [expenses],
+  );
+
+  const groups = useMemo(() => {
+    const map = new Map<string, Expense[]>();
+    for (const expense of sorted) {
+      const list = map.get(expense.spentAt);
+      if (list) list.push(expense);
+      else map.set(expense.spentAt, [expense]);
+    }
+    return [...map.entries()];
+  }, [sorted]);
+
+  const nameOf = (memberId: string) => members.find((m) => m.id === memberId)?.name ?? 'Unknown';
+
+  async function handleDelete(expense: Expense) {
+    if (!window.confirm(`Delete "${expense.title}"?`)) return;
+    await onDelete(expense.id);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Expenses</h2>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="rounded-full bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow"
+        >
+          + Add
+        </button>
+      </div>
+
+      {sorted.length === 0 && (
+        <div className="rounded-2xl bg-white p-8 text-center shadow-sm">
+          <p className="text-sm text-slate-500">No expenses yet.</p>
+          <p className="mt-1 text-xs text-slate-400">Tap “+ Add” to record the first one.</p>
+        </div>
+      )}
+
+      {groups.map(([date, dayExpenses]) => (
+        <section key={date} className="overflow-hidden rounded-2xl bg-white shadow-sm">
+          <h3 className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            {groupLabel(date)}
+          </h3>
+          <ul className="divide-y divide-slate-100">
+            {dayExpenses.map((expense) => {
+              const expanded = expandedId === expense.id;
+              const participantCount = expense.splits.length;
+              return (
+                <li key={expense.id}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(expanded ? null : expense.id)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-base text-slate-800">
+                        {expense.title}
+                      </span>
+                      <span className="block text-xs text-slate-400">
+                        {nameOf(expense.payerId)} paid · {participantCount}{' '}
+                        {participantCount === 1 ? 'person' : 'people'}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="block text-base font-semibold text-slate-900">
+                        {formatMinor(expense.amountMinor, expense.currency)}
+                      </span>
+                      {expense.currency !== baseCurrency && (
+                        <span className="block text-xs text-slate-400">
+                          ≈ {formatMinor(expense.baseAmountMinor, baseCurrency)}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+
+                  {expanded && (
+                    <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
+                      <p className="mb-2 text-xs text-slate-500">
+                        1 {expense.currency} = {formatRate(expense.fxRate)} {baseCurrency}
+                      </p>
+                      <ul className="space-y-1">
+                        {expense.splits.map((split) => (
+                          <li key={split.memberId} className="flex justify-between text-sm">
+                            <span className="text-slate-600">{nameOf(split.memberId)}</span>
+                            <span className="text-slate-800">
+                              {formatMinor(split.amountMinor, expense.currency)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(expense)}
+                        className="mt-3 text-xs font-medium text-red-500"
+                      >
+                        Delete expense
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
