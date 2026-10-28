@@ -94,11 +94,16 @@ const input = (selector: string, value: string) => act(async () => {
 
 describe('trip loading UI', () => {
   it('shows cached content during refresh, keeps it on failure, and updates after Retry', async () => {
+    vi.useFakeTimers();
     writeTripCache(bundle('Сохранённая поездка'), Date.now() - 60_000);
     const response = deferred<TripBundle>();
     load.mockImplementationOnce(() => response.promise).mockResolvedValueOnce(bundle());
     await render();
     expect(container.textContent).toContain('Сохранённая поездка');
+    expect(container.textContent).not.toContain('Обновляем…');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1499); });
+    expect(container.textContent).not.toContain('Обновляем…');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(container.textContent).toContain('Обновляем…');
     await act(async () => response.reject(new Error('Нет связи')));
     expect(container.textContent).toContain('Сохранённая поездка');
@@ -106,6 +111,21 @@ describe('trip loading UI', () => {
     await click('Повторить обновление');
     expect(container.textContent).toContain('Свежая поездка');
     expect(container.textContent).not.toContain('Нет связи');
+  });
+
+  it('never flashes the notice for a fast refresh and shows errors immediately', async () => {
+    vi.useFakeTimers();
+    writeTripCache(bundle());
+    const response = deferred<TripBundle>();
+    load.mockImplementationOnce(() => response.promise).mockRejectedValueOnce(new Error('Нет связи'));
+    await render();
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    await act(async () => response.resolve(bundle()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    await act(async () => window.dispatchEvent(new Event('online')));
+    expect(container.textContent).toContain('Нет связи');
+    expect(container.textContent).toContain('Повторить обновление');
   });
 
   it('restores both the trip and all realtime subscriptions after initial failure + Retry', async () => {
@@ -139,7 +159,7 @@ describe('trip loading UI', () => {
     load.mockImplementationOnce(() => next.promise);
     await act(async () => { window.dispatchEvent(new Event('online')); });
     expect(container.textContent).toContain('Свежая поездка');
-    expect(container.textContent).toContain('Обновляем…');
+    expect(container.textContent).not.toContain('Обновляем…');
     await act(async () => next.resolve(bundle('Обновлённая поездка')));
     expect(container.textContent).toContain('Обновлённая поездка');
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
