@@ -1,12 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { formatMinor, type CurrencyCode } from '../lib/currencies';
 import { formatRate } from '../lib/fx';
+import { readMineOnlyPref, writeMineOnlyPref } from '../lib/prefs';
 import type { Expense, Member } from '../lib/types';
 
 interface Props {
   expenses: Expense[];
   members: Member[];
   baseCurrency: CurrencyCode;
+  /** "Me" member id — enables the "Только мои" filter; null hides the chip. */
+  meId: string | null;
   onAdd: () => void;
   onDelete: (expenseId: string) => Promise<void>;
 }
@@ -21,8 +24,32 @@ function groupLabel(dateStr: string): string {
   });
 }
 
-export default function ExpenseList({ expenses, members, baseCurrency, onAdd, onDelete }: Props) {
+export default function ExpenseList({
+  expenses,
+  members,
+  baseCurrency,
+  meId,
+  onAdd,
+  onDelete,
+}: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // "Только мои" filter — the same pref as on the balances tab (shared key),
+  // so both tabs show the same value after switching.
+  const [mineOnly, setMineOnly] = useState(readMineOnlyPref);
+  useEffect(() => {
+    writeMineOnlyPref(mineOnly);
+  }, [mineOnly]);
+
+  // Wallet-aware membership: me + everyone sharing my unit (e.g. a partner).
+  const myMemberIds = useMemo(() => {
+    const me = members.find((m) => m.id === meId);
+    return new Set(
+      members
+        .filter((m) => m.id === meId || (me?.unit != null && m.unit === me.unit))
+        .map((m) => m.id),
+    );
+  }, [members, meId]);
 
   const sorted = useMemo(
     () =>
@@ -34,15 +61,27 @@ export default function ExpenseList({ expenses, members, baseCurrency, onAdd, on
     [expenses],
   );
 
+  const visible = useMemo(
+    () =>
+      mineOnly
+        ? sorted.filter(
+            (expense) =>
+              myMemberIds.has(expense.payerId) ||
+              expense.splits.some((split) => myMemberIds.has(split.memberId)),
+          )
+        : sorted,
+    [sorted, mineOnly, myMemberIds],
+  );
+
   const groups = useMemo(() => {
     const map = new Map<string, Expense[]>();
-    for (const expense of sorted) {
+    for (const expense of visible) {
       const list = map.get(expense.spentAt);
       if (list) list.push(expense);
       else map.set(expense.spentAt, [expense]);
     }
     return [...map.entries()];
-  }, [sorted]);
+  }, [visible]);
 
   const nameOf = (memberId: string) => members.find((m) => m.id === memberId)?.name ?? '???';
 
@@ -64,11 +103,32 @@ export default function ExpenseList({ expenses, members, baseCurrency, onAdd, on
         </button>
       </div>
 
-      {sorted.length === 0 && (
+      {meId && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400">Фильтр:</span>
+          <button
+            type="button"
+            onClick={() => setMineOnly((value) => !value)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+              mineOnly ? 'bg-teal-600 text-white' : 'bg-white text-slate-600 shadow-sm'
+            }`}
+          >
+            Только мои
+          </button>
+        </div>
+      )}
+
+      {expenses.length === 0 && (
         <div className="rounded-2xl bg-white p-8 text-center shadow-sm">
           <p className="text-sm text-slate-500">Пока нет расходов.</p>
           <p className="mt-1 text-xs text-slate-400">Нажмите «+ Добавить», чтобы записать первый.</p>
         </div>
+      )}
+
+      {expenses.length > 0 && visible.length === 0 && (
+        <p className="rounded-2xl bg-white px-4 py-3 text-xs text-slate-400 shadow-sm">
+          Расходов с вашим участием нет.
+        </p>
       )}
 
       {groups.map(([date, dayExpenses]) => (

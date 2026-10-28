@@ -16,17 +16,8 @@ import {
   type CurrencyCode,
 } from '../lib/currencies';
 import { crossRate, fetchRates, type Rates } from '../lib/fx';
+import { readMineOnlyPref, writeMineOnlyPref } from '../lib/prefs';
 import type { DebtTransfer, Expense, Member, Payment } from '../lib/types';
-
-const MINE_ONLY_KEY = 'tripsplit:mineOnly';
-
-function readMineOnlyPref(): boolean {
-  try {
-    return localStorage.getItem(MINE_ONLY_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 type Wallets = ReturnType<typeof aggregateByUnit>;
 
@@ -127,11 +118,7 @@ export default function BalanceTab({
   // "Только мои" filter: show balances/settlements/payments involving me only.
   const [mineOnly, setMineOnly] = useState(readMineOnlyPref);
   useEffect(() => {
-    try {
-      localStorage.setItem(MINE_ONLY_KEY, mineOnly ? '1' : '0');
-    } catch {
-      /* private mode — the pref just won't persist */
-    }
+    writeMineOnlyPref(mineOnly);
   }, [mineOnly]);
   // "Перевести в…" popup: the settlement being paid in another currency.
   const [payAs, setPayAs] = useState<{ ledger: Ledger; settlement: Settlement } | null>(null);
@@ -633,7 +620,17 @@ export default function BalanceTab({
                       </span>
                       <button
                         type="button"
-                        onClick={() => void onUndoPayment(payment.id)}
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Отменить платёж ${memberName(payment.payerId)} → ${memberName(
+                                payment.receiverId,
+                              )} на ${formatMinor(payment.amountMinor, ccy)}? Долг вернётся в балансы.`,
+                            )
+                          )
+                            return;
+                          void onUndoPayment(payment.id);
+                        }}
                         className="text-xs font-medium text-red-500"
                       >
                         отменить
@@ -721,7 +718,23 @@ export default function BalanceTab({
                 </span>
                 <button
                   type="button"
-                  onClick={() => void onUndoTransfer(transfer.id)}
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        `Отменить перенос долга ${memberName(transfer.payerId)} → ${memberName(
+                          transfer.receiverId,
+                        )} (${formatMinor(
+                          transfer.sourceAmountMinor,
+                          transfer.sourceCurrency,
+                        )} → ${formatMinor(
+                          transfer.targetAmountMinor,
+                          transfer.targetCurrency,
+                        )})?`,
+                      )
+                    )
+                      return;
+                    void onUndoTransfer(transfer.id);
+                  }}
                   className="text-xs font-medium text-red-500"
                 >
                   отменить

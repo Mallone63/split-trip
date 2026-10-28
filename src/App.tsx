@@ -310,6 +310,7 @@ export default function App() {
               expenses={bundle.expenses}
               members={bundle.members}
               baseCurrency={bundle.trip.baseCurrency}
+              meId={meId}
               onAdd={() => setAddingExpense(true)}
               onDelete={handleDeleteExpense}
             />

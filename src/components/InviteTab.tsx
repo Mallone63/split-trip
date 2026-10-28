@@ -198,7 +198,10 @@ export default function InviteTab({
                   <span className="text-sm font-medium text-slate-800">{names}</span>
                   <button
                     type="button"
-                    onClick={() => void handleUnlink(unit)}
+                    onClick={() => {
+                      if (!window.confirm(`Разъединить кошелёк «${names}»?`)) return;
+                      void handleUnlink(unit);
+                    }}
                     className="text-xs font-medium text-red-500"
                   >
                     Разъединить
