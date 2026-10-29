@@ -175,9 +175,11 @@ export default function ExpenseList({
 
                   {expanded && (
                     <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
-                      <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
-                        1 {expense.currency} = {formatRate(expense.fxRate)} {baseCurrency}
-                      </p>
+                      {expense.currency !== baseCurrency && (
+                        <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                          1 {expense.currency} = {formatRate(expense.fxRate)} {baseCurrency}
+                        </p>
+                      )}
                       <ul className="space-y-1">
                         {expense.splits.map((split) => {
                           const paid = split.paidMinor ?? 0;

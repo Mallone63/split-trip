@@ -239,28 +239,24 @@ export default function ExpenseForm({
           </label>
         </div>
 
-        <label className="block">
-          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Курс к {baseCurrency}</span>
-          {currency === baseCurrency ? (
-            <input value="1" disabled className={`${inputClass} bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500`} />
-          ) : (
-            <>
-              <input
-                value={rateStr}
-                onChange={(e) => setRateStr(e.target.value)}
-                inputMode="decimal"
-                placeholder={`1 ${currency} = ? ${baseCurrency}`}
-                className={inputClass}
-              />
-              <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
-                {rateStatus === 'loading' && 'Получаем сегодняшний курс…'}
-                {rateStatus === 'ready' &&
-                  `Рыночный курс: 1 ${currency} = ${rateStr} ${baseCurrency}. Если карта платит по другому курсу — введите фактический.`}
-                {rateStatus === 'unavailable' && 'Нет сети — введите курс вручную.'}
-              </span>
-            </>
-          )}
-        </label>
+        {currency !== baseCurrency && (
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Курс к {baseCurrency}</span>
+            <input
+              value={rateStr}
+              onChange={(e) => setRateStr(e.target.value)}
+              inputMode="decimal"
+              placeholder={`1 ${currency} = ? ${baseCurrency}`}
+              className={inputClass}
+            />
+            <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+              {rateStatus === 'loading' && 'Получаем сегодняшний курс…'}
+              {rateStatus === 'ready' &&
+                `Рыночный курс: 1 ${currency} = ${rateStr} ${baseCurrency}. Если карта платит по другому курсу — введите фактический.`}
+              {rateStatus === 'unavailable' && 'Нет сети — введите курс вручную.'}
+            </span>
+          </label>
+        )}
       </div>
 
       <div className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
