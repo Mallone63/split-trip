@@ -27,13 +27,48 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
 
 - `src/lib/` — pure money math: `currencies.ts`, `fx.ts`, `split.ts`, `balances.ts`.
   Keep these functions pure and covered by tests in `src/lib/__tests__/`.
-- `src/lib/api.ts` — all Supabase access + trip-link / "me" localStorage persistence.
+- `src/lib/api.ts` — all Supabase access + trip-link / "me" localStorage persistence
+  (keys `tripsplit:lastTrip`, `tripsplit:me:<tripId>`).
+- `src/lib/prefs.ts` — small localStorage UI prefs (`tripsplit:mineOnly`); `errors.ts`
+  turns thrown values into user-facing Russian messages (`TripNotFoundError`).
 - `src/lib/tripCache.ts`, `tripLoader.ts`, `useTripLoader.ts` — validated local
   snapshots, cancellable/timeout-bounded loads, and React lifecycle integration.
   Preserve cached data on transient failure; clear it on confirmed not-found.
   Keep Retry on the same loading path as initial load so subscriptions recover.
 - `src/components/` — one component per file, mobile-first Tailwind, max-w-md layout.
+  `App.tsx` owns all state/mutations and wraps every screen in `Shell`; components
+  stay presentational and receive async callbacks.
 - `supabase/schema.sql` — single source of truth for the DB (tables + permissive RLS + realtime).
+
+## UI & theming
+
+- Light **and** dark themes follow the OS setting (`prefers-color-scheme`) via
+  Tailwind v4's default media-query `dark:` variant — pure CSS, no JS, no toggle,
+  no persistence. Every color utility is paired with its `dark:` counterpart in the
+  same className string; don't introduce a class-strategy toggle or theme state.
+- Surfaces: the page canvas is painted only by `body` in `index.css`
+  (`bg-white dark:bg-slate-950`). Cards `bg-white` → `dark:bg-slate-900`; nested
+  rows `bg-slate-50` → `dark:bg-slate-800/60`; chips/tracks `bg-slate-100` →
+  `dark:bg-slate-800`; gray buttons `bg-slate-200`/`bg-slate-800` →
+  `dark:bg-slate-700`. Text ramp `slate-900/800/700/600/500/400/300` pairs with
+  `dark:slate-100/200/300/400/400/500/600`; borders & dividers `100/200/300` →
+  `dark:800/700/600`. Accents: `text-teal-700` → `dark:text-teal-300`,
+  `bg-teal-100` → `dark:bg-teal-900/40`, selected `border-teal-300 bg-teal-50` →
+  `dark:border-teal-700 dark:bg-teal-900/30`. Status text `emerald-600`,
+  `red-500/600`, `amber-600` → `dark:*-400`; `red-700` → `dark:red-300` and error
+  boxes `bg-red-50` → `dark:bg-red-950/40`. Solid `bg-teal-600`/`bg-emerald-600`
+  buttons with `text-white` (incl. the FAB) are shared by both themes.
+- Native controls follow the theme via `color-scheme: light dark` (kept in both
+  `index.css` and an `index.html` meta); the `theme-color` meta carries light/dark
+  media variants.
+- The invite QR always stays black-on-white for scannability — never theme it.
+  Manifest `theme_color`/`background_color` cannot react to media queries
+  (install splash only) — leave them brand teal.
+- Safe-area / fixed-position helpers live in `index.css` (`.app-shell`, `.pb-safe`,
+  `.expense-add`, `.safe-sheet-overlay`, `.safe-sheet`): iOS draws under the status
+  bar and home indicator, so fixed UI must use these instead of ad-hoc padding.
+- Tests: vitest defaults to a `node` environment; `src/App.test.tsx` opts into jsdom
+  via a `// @vitest-environment jsdom` comment and mocks `./lib/api` + `./lib/fx`.
 
 ## Rules & gotchas
 

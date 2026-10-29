@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* The app follows the OS theme through Tailwind's default media-query `dark:`
+   variant (prefers-color-scheme) — no JS, no toggle. `color-scheme` makes native
+   controls (selects, date inputs, scrollbars) render to match. */
+:root {
+  color-scheme: light dark;
+}
+
 html,
 body,
 #root {
@@ -8,6 +15,9 @@ body,
 
 body {
   -webkit-tap-highlight-color: transparent;
+  /* Nothing else paints the page canvas — set it here so dark mode has a base
+     (light keeps the previous plain white). */
+  @apply bg-white dark:bg-slate-950;
 }
 
 /* viewport-fit=cover + black-translucent lets standalone iOS draw underneath

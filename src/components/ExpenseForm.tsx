@@ -127,22 +127,22 @@ export default function ExpenseForm({
   }
 
   const inputClass =
-    'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-base focus:border-teal-500 focus:outline-none';
+    'mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-base focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none';
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           Новый расход
         </h2>
-        <button type="button" onClick={onCancel} className="text-sm font-medium text-slate-500">
+        <button type="button" onClick={onCancel} className="text-sm font-medium text-slate-500 dark:text-slate-400">
           Отмена
         </button>
       </div>
 
-      <div className="space-y-4 rounded-2xl bg-white p-4 shadow-sm">
+      <div className="space-y-4 rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">За что?</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">За что?</span>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -153,7 +153,7 @@ export default function ExpenseForm({
 
         <div className="flex gap-2">
           <label className="block min-w-0 flex-1">
-            <span className="text-sm font-medium text-slate-700">Сумма</span>
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Сумма</span>
             <input
               value={amountStr}
               onChange={(e) => setAmountStr(e.target.value)}
@@ -163,11 +163,11 @@ export default function ExpenseForm({
             />
           </label>
           <label className="block w-32 shrink-0">
-            <span className="text-sm font-medium text-slate-700">Валюта</span>
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Валюта</span>
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
-              className={`${inputClass} bg-white`}
+              className={`${inputClass} bg-white dark:bg-slate-900`}
             >
               {CURRENCY_CODES.map((code) => (
                 <option key={code} value={code}>
@@ -180,11 +180,11 @@ export default function ExpenseForm({
 
         <div className="flex gap-2">
           <label className="block min-w-0 flex-1">
-            <span className="text-sm font-medium text-slate-700">Кто платил</span>
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Кто платил</span>
             <select
               value={payerId}
               onChange={(e) => setPayerId(e.target.value)}
-              className={`${inputClass} bg-white`}
+              className={`${inputClass} bg-white dark:bg-slate-900`}
             >
               {members.map((member) => (
                 <option key={member.id} value={member.id}>
@@ -194,7 +194,7 @@ export default function ExpenseForm({
             </select>
           </label>
           <label className="block min-w-0 flex-1">
-            <span className="text-sm font-medium text-slate-700">Дата</span>
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Дата</span>
             <input
               type="date"
               value={spentAt}
@@ -205,9 +205,9 @@ export default function ExpenseForm({
         </div>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Курс к {baseCurrency}</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Курс к {baseCurrency}</span>
           {currency === baseCurrency ? (
-            <input value="1" disabled className={`${inputClass} bg-slate-100 text-slate-400`} />
+            <input value="1" disabled className={`${inputClass} bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500`} />
           ) : (
             <>
               <input
@@ -217,7 +217,7 @@ export default function ExpenseForm({
                 placeholder={`1 ${currency} = ? ${baseCurrency}`}
                 className={inputClass}
               />
-              <span className="mt-1 block text-xs text-slate-400">
+              <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
                 {rateStatus === 'loading' && 'Получаем сегодняшний курс…'}
                 {rateStatus === 'ready' &&
                   `Рыночный курс: 1 ${currency} = ${rateStr} ${baseCurrency}. Если карта платит по другому курсу — введите фактический.`}
@@ -228,15 +228,15 @@ export default function ExpenseForm({
         </label>
       </div>
 
-      <div className="rounded-2xl bg-white p-4 shadow-sm">
-        <div className="mb-3 flex rounded-lg bg-slate-100 p-1 text-sm font-medium">
+      <div className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
+        <div className="mb-3 flex rounded-lg bg-slate-100 dark:bg-slate-800 p-1 text-sm font-medium">
           {(['equal', 'exact'] as SplitMode[]).map((modeOption) => (
             <button
               key={modeOption}
               type="button"
               onClick={() => setMode(modeOption)}
               className={`flex-1 rounded-md py-1.5 ${
-                mode === modeOption ? 'bg-white text-teal-700 shadow' : 'text-slate-500'
+                mode === modeOption ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {modeOption === 'equal' ? 'Поровну' : 'По суммам'}
@@ -256,15 +256,15 @@ export default function ExpenseForm({
                     onClick={() => toggleMember(member.id)}
                     className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left ${
                       isSelected
-                        ? 'border-teal-300 bg-teal-50'
-                        : 'border-slate-200 bg-white opacity-50'
+                        ? 'border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 opacity-50'
                     }`}
                   >
-                    <span className="text-sm text-slate-800">
+                    <span className="text-sm text-slate-800 dark:text-slate-200">
                       {member.name}
                       {member.id === payerId ? ' (плательщик)' : ''}
                     </span>
-                    <span className="text-sm font-medium text-slate-600">
+                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
                       {isSelected && amountMinor > 0 ? formatMinor(share, currency) : '—'}
                     </span>
                   </button>
@@ -278,7 +278,7 @@ export default function ExpenseForm({
           <div className="space-y-2">
             {members.map((member) => (
               <label key={member.id} className="flex items-center gap-3">
-                <span className="w-24 shrink-0 truncate text-sm text-slate-800">{member.name}</span>
+                <span className="w-24 shrink-0 truncate text-sm text-slate-800 dark:text-slate-200">{member.name}</span>
                 <input
                   value={exactAmounts[member.id] ?? ''}
                   onChange={(e) =>
@@ -286,27 +286,27 @@ export default function ExpenseForm({
                   }
                   inputMode="decimal"
                   placeholder="0"
-                  className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-right text-sm focus:border-teal-500 focus:outline-none"
+                  className="min-w-0 flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-right text-sm focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
                 />
               </label>
             ))}
             <p
               className={`text-right text-xs font-medium ${
                 amountMinor > 0 && sumSplits(exactSplits) === amountMinor
-                  ? 'text-emerald-600'
-                  : 'text-red-500'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-red-500 dark:text-red-400'
               }`}
             >
               {formatMinor(sumSplits(exactSplits), currency)} из {formatMinor(amountMinor, currency)}
             </p>
             {exactCheck && !exactCheck.ok && amountMinor > 0 && (
-              <p className="text-xs text-red-500">{exactCheck.error}</p>
+              <p className="text-xs text-red-500 dark:text-red-400">{exactCheck.error}</p>
             )}
           </div>
         )}
       </div>
 
-      {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-red-50 dark:bg-red-950/40 p-3 text-sm text-red-700 dark:text-red-300">{error}</p>}
 
       <button
         type="submit"

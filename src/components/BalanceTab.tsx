@@ -325,12 +325,12 @@ export default function BalanceTab({
     <div className="space-y-4">
       {meId && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">Фильтр:</span>
+          <span className="text-xs text-slate-400 dark:text-slate-500">Фильтр:</span>
           <button
             type="button"
             onClick={() => setMineOnly((value) => !value)}
             className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-              mineOnly ? 'bg-teal-600 text-white' : 'bg-white text-slate-600 shadow-sm'
+              mineOnly ? 'bg-teal-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 shadow-sm'
             }`}
           >
             Только мои
@@ -338,32 +338,32 @@ export default function BalanceTab({
         </div>
       )}
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
+      <section className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
         <div className="flex items-start justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
             Всего потрачено
           </h2>
           <div className="space-y-0.5 text-right">
             {ledgers.some((ledger) => ledger.totalMinor !== 0) ? (
               ledgers.map((ledger) =>
                 ledger.totalMinor === 0 ? null : (
-                  <p key={ledger.currency} className="text-base font-bold text-slate-900">
+                  <p key={ledger.currency} className="text-base font-bold text-slate-900 dark:text-slate-100">
                     {formatMinor(ledger.totalMinor, ledger.currency)}
                   </p>
                 ),
               )
             ) : (
-              <p className="text-base font-bold text-slate-900">0</p>
+              <p className="text-base font-bold text-slate-900 dark:text-slate-100">0</p>
             )}
           </div>
         </div>
       </section>
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+      <section className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           Балансы
         </h2>
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
           {(mineOnly
             ? ledgers[0].wallets.filter((wallet) => wallet.memberIds.includes(meId ?? ''))
             : ledgers[0].wallets
@@ -373,7 +373,7 @@ export default function BalanceTab({
               : wallet.label;
             return (
               <li key={wallet.key} className="flex items-start justify-between py-2.5">
-                <span className="text-base text-slate-800">{label}</span>
+                <span className="text-base text-slate-800 dark:text-slate-200">{label}</span>
                 <span className="space-y-0.5 text-right">
                   {ledgers.some(
                     (ledger) =>
@@ -386,7 +386,7 @@ export default function BalanceTab({
                         <p
                           key={ledger.currency}
                           className={`text-sm font-semibold ${
-                            net > 0 ? 'text-emerald-600' : 'text-red-500'
+                            net > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
                           }`}
                         >
                           {`${net > 0 ? '+' : ''}${formatMinor(net, ledger.currency)}`}
@@ -394,7 +394,7 @@ export default function BalanceTab({
                       );
                     })
                   ) : (
-                    <p className="text-sm font-semibold text-slate-400">Не заржавело</p>
+                    <p className="text-sm font-semibold text-slate-400 dark:text-slate-500">Не заржавело</p>
                   )}
                 </span>
               </li>
@@ -403,8 +403,8 @@ export default function BalanceTab({
         </ul>
       </section>
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+      <section className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           Предлагаемые расчёты
         </h2>
         {ledgers.every(
@@ -413,7 +413,7 @@ export default function BalanceTab({
               (settlement) => !mineOnly || settlementInvolvesMe(ledger, settlement),
             ).length === 0,
         ) ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             {expenses.length === 0
               ? 'Расходов пока нет.'
               : mineOnly
@@ -431,7 +431,7 @@ export default function BalanceTab({
               if (visible.length === 0) return null;
               return (
                 <div key={ledger.currency}>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
                     {CURRENCIES[ledger.currency].symbol} {ledger.currency}
                   </p>
                   <ul className="space-y-2">
@@ -443,9 +443,9 @@ export default function BalanceTab({
                       const involvesMe = settlementInvolvesMe(ledger, settlement);
                       const entryCcy = partialCcy ?? ledger.currency;
                       return (
-                        <li key={settlementKey} className="rounded-lg bg-slate-50 px-3 py-2.5">
+                        <li key={settlementKey} className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5">
                           <div className="flex items-baseline justify-between gap-2">
-                            <span className="min-w-0 text-sm text-slate-700">
+                            <span className="min-w-0 text-sm text-slate-700 dark:text-slate-300">
                               <strong>{labelOf(ledger.currency, settlement.fromMemberId)}</strong>
                               {' → '}
                               <strong>{labelOf(ledger.currency, settlement.toMemberId)}</strong>
@@ -456,17 +456,17 @@ export default function BalanceTab({
                                   type="button"
                                   onClick={() => setPayAs({ ledger, settlement })}
                                   title="Хочу оплатить в другой валюте"
-                                  className="block text-sm font-semibold text-slate-900 underline decoration-dotted underline-offset-2"
+                                  className="block text-sm font-semibold text-slate-900 dark:text-slate-100 underline decoration-dotted underline-offset-2"
                                 >
                                   {formatMinor(settlement.amountMinor, ledger.currency)}
                                 </button>
                               ) : (
-                                <span className="block text-sm font-semibold text-slate-900">
+                                <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
                                   {formatMinor(settlement.amountMinor, ledger.currency)}
                                 </span>
                               )}
                               {alt && (
-                                <span className="block text-[10px] leading-tight text-slate-400">
+                                <span className="block text-[10px] leading-tight text-slate-400 dark:text-slate-500">
                                   {alt}
                                 </span>
                               )}
@@ -489,7 +489,7 @@ export default function BalanceTab({
                                   setPartialError(null);
                                   setPartialCcy(null);
                                 }}
-                                className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 active:bg-slate-100"
+                                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 active:bg-slate-100 dark:active:bg-slate-700"
                               >
                                 Погасить частично
                               </button>
@@ -502,7 +502,7 @@ export default function BalanceTab({
                                 e.preventDefault();
                                 void submitPartial(ledger.currency, settlement);
                               }}
-                              className="mt-2 border-t border-slate-200 pt-2"
+                              className="mt-2 border-t border-slate-200 dark:border-slate-700 pt-2"
                             >
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {CURRENCY_CODES.map((c) =>
@@ -514,7 +514,7 @@ export default function BalanceTab({
                                       className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                                         entryCcy === c
                                           ? 'bg-teal-600 text-white'
-                                          : 'border border-slate-300 bg-white text-slate-600'
+                                          : 'border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400'
                                       }`}
                                     >
                                       {CURRENCIES[c].symbol} {c}
@@ -529,9 +529,9 @@ export default function BalanceTab({
                                   inputMode="decimal"
                                   autoFocus
                                   placeholder={partialPlaceholder(settlement, ledger.currency)}
-                                  className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-teal-500 focus:outline-none"
+                                  className="min-w-0 flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-sm focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
                                 />
-                                <span className="text-xs text-slate-400">{entryCcy}</span>
+                                <span className="text-xs text-slate-400 dark:text-slate-500">{entryCcy}</span>
                                 <button
                                   type="submit"
                                   disabled={!partialAmount.trim()}
@@ -546,16 +546,16 @@ export default function BalanceTab({
                                     setPartialAmount('');
                                     setPartialError(null);
                                   }}
-                                  className="text-xs font-medium text-slate-500"
+                                  className="text-xs font-medium text-slate-500 dark:text-slate-400"
                                 >
                                   Отмена
                                 </button>
                               </div>
                               {preview && (
-                                <p className="mt-1 text-xs text-slate-500">{preview}</p>
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{preview}</p>
                               )}
                               {partialError && (
-                                <p className="mt-1 text-xs text-red-500">{partialError}</p>
+                                <p className="mt-1 text-xs text-red-500 dark:text-red-400">{partialError}</p>
                               )}
                             </form>
                           )}
@@ -568,23 +568,23 @@ export default function BalanceTab({
             })}
           </div>
         )}
-        <p className="mt-3 text-xs text-slate-400">
+        <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
           Расчёты ведутся отдельно по каждой валюте. Из общего кошелька деньги может принять
           любой из его участников. Переплата разрешена — излишек станет обратным долгом.
         </p>
       </section>
 
       {mineOnly && visiblePayments.length === 0 ? (
-        <p className="rounded-2xl bg-white px-4 py-3 text-xs text-slate-400 shadow-sm">
+        <p className="rounded-2xl bg-white dark:bg-slate-900 px-4 py-3 text-xs text-slate-400 dark:text-slate-500 shadow-sm">
           Платежей с вашим участием нет.
         </p>
       ) : (
         visiblePayments.length > 0 && (
-          <section className="rounded-2xl bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          <section className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Отмеченные расчёты
             </h2>
-            <ul className="divide-y divide-slate-100">
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
               {visiblePayments.map((payment) => {
                 const ccy = paymentCcy(payment);
                 const alt = altAmounts(payment.amountMinor, ccy);
@@ -596,24 +596,24 @@ export default function BalanceTab({
                     : null;
                 return (
                   <li key={payment.id} className="flex items-center justify-between py-2">
-                    <span className="min-w-0 text-sm text-slate-700">
+                    <span className="min-w-0 text-sm text-slate-700 dark:text-slate-300">
                       <strong>{memberName(payment.payerId)}</strong>
                       {' → '}
                       <strong>{memberName(payment.receiverId)}</strong>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       <span className="text-right">
-                        <span className="block text-sm text-emerald-600">
+                        <span className="block text-sm text-emerald-600 dark:text-emerald-400">
                           ✓ {formatMinor(payment.amountMinor, ccy)}
                           {paidIn && paidIn.currency !== ccy && (
-                            <span className="text-xs font-normal text-slate-400">
+                            <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
                               {' '}
                               · оплачено {formatMinor(paidIn.amountMinor, paidIn.currency)}
                             </span>
                           )}
                         </span>
                         {alt && (
-                          <span className="block text-[10px] leading-tight text-slate-400">
+                          <span className="block text-[10px] leading-tight text-slate-400 dark:text-slate-500">
                             {alt}
                           </span>
                         )}
@@ -631,7 +631,7 @@ export default function BalanceTab({
                             return;
                           void onUndoPayment(payment.id);
                         }}
-                        className="text-xs font-medium text-red-500"
+                        className="text-xs font-medium text-red-500 dark:text-red-400"
                       >
                         отменить
                       </button>
@@ -640,7 +640,7 @@ export default function BalanceTab({
                 );
               })}
             </ul>
-            <p className="mt-2 text-xs text-slate-400">
+            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
               «Отменить» убирает платёж — задолженность вернётся в балансы.
             </p>
           </section>
@@ -653,11 +653,11 @@ export default function BalanceTab({
           onClick={() => setPayAs(null)}
         >
           <div
-            className="safe-sheet w-full max-w-md rounded-t-2xl bg-white p-4"
+            className="safe-sheet w-full max-w-md rounded-t-2xl bg-white dark:bg-slate-900 p-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-bold text-slate-900">Перевести в…</h3>
-            <p className="mb-3 mt-1 text-xs text-slate-400">
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Перевести в…</h3>
+            <p className="mb-3 mt-1 text-xs text-slate-400 dark:text-slate-500">
               {labelOf(payAs.ledger.currency, payAs.settlement.fromMemberId)} →{' '}
               {labelOf(payAs.ledger.currency, payAs.settlement.toMemberId)} ·{' '}
               {formatMinor(payAs.settlement.amountMinor, payAs.ledger.currency)} по сегодняшнему
@@ -677,12 +677,12 @@ export default function BalanceTab({
                     onClick={() =>
                       void confirmTransfer(payAs.ledger, payAs.settlement, c, converted)
                     }
-                    className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5 text-sm active:bg-slate-50"
+                    className="flex w-full items-center justify-between rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 text-sm active:bg-slate-50 dark:active:bg-slate-800"
                   >
-                    <span className="font-semibold text-slate-700">
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
                       {CURRENCIES[c].symbol} {c}
                     </span>
-                    <span className="font-semibold text-slate-900">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">
                       ≈ {formatMinor(converted, c)}
                     </span>
                   </button>
@@ -692,27 +692,27 @@ export default function BalanceTab({
             <button
               type="button"
               onClick={() => setPayAs(null)}
-              className="mt-3 w-full rounded-xl bg-slate-100 py-2.5 text-sm font-medium text-slate-600"
+              className="mt-3 w-full rounded-xl bg-slate-100 dark:bg-slate-800 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400"
             >
               Отмена
             </button>
           </div>
         </div>
       )}
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+      <section className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           Переносы долгов
         </h2>
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
           {transfersSorted.map((transfer) => (
             <li key={transfer.id} className="flex items-center justify-between py-2">
-              <span className="min-w-0 text-sm text-slate-700">
+              <span className="min-w-0 text-sm text-slate-700 dark:text-slate-300">
                 <strong>{memberName(transfer.payerId)}</strong>
                 {' должен '}
                 <strong>{memberName(transfer.receiverId)}</strong>
               </span>
               <span className="flex shrink-0 items-center gap-2">
-                <span className="text-right text-sm text-amber-600">
+                <span className="text-right text-sm text-amber-600 dark:text-amber-400">
                   {formatMinor(transfer.sourceAmountMinor, transfer.sourceCurrency)} →{' '}
                   {formatMinor(transfer.targetAmountMinor, transfer.targetCurrency)}
                 </span>
@@ -735,7 +735,7 @@ export default function BalanceTab({
                       return;
                     void onUndoTransfer(transfer.id);
                   }}
-                  className="text-xs font-medium text-red-500"
+                  className="text-xs font-medium text-red-500 dark:text-red-400"
                 >
                   отменить
                 </button>
@@ -743,7 +743,7 @@ export default function BalanceTab({
             </li>
           ))}
         </ul>
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
           Перенос объявляет, в какой валюте вы погасите долг. «Отменить» вернёт долг в исходную
           валюту.
         </p>

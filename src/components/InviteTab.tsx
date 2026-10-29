@@ -101,11 +101,11 @@ export default function InviteTab({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl bg-white p-4 text-center shadow-sm">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+      <section className="rounded-2xl bg-white dark:bg-slate-900 p-4 text-center shadow-sm">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           Пригласить компанию
         </h2>
-        <p className="mt-1 text-xs text-slate-400">
+        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
           Любой, кто откроет ссылку, может смотреть и добавлять расходы.
         </p>
         {qrUrl && (
@@ -117,7 +117,7 @@ export default function InviteTab({
             className="mx-auto mt-3 rounded-lg"
           />
         )}
-        <p className="mt-3 break-all rounded-lg bg-slate-50 p-2 text-xs text-slate-500">
+        <p className="mt-3 break-all rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2 text-xs text-slate-500 dark:text-slate-400">
           {shareUrl}
         </p>
         <button
@@ -129,11 +129,11 @@ export default function InviteTab({
         </button>
       </section>
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+      <section className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           Участники
         </h2>
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
           {members.map((member) => (
             <li key={member.id}>
               <button
@@ -141,10 +141,10 @@ export default function InviteTab({
                 onClick={() => onSetMe(meId === member.id ? null : member.id)}
                 className="flex w-full items-center justify-between py-2.5 text-left"
               >
-                <span className="text-base text-slate-800">{member.name}</span>
+                <span className="text-base text-slate-800 dark:text-slate-200">{member.name}</span>
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    meId === member.id ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-400'
+                    meId === member.id ? 'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
                   }`}
                 >
                   {meId === member.id ? 'это вы' : 'нажмите — это вы'}
@@ -159,26 +159,26 @@ export default function InviteTab({
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Добавить человека…"
-            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none"
+            className="min-w-0 flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
           />
           <button
             type="submit"
             disabled={!newName.trim() || adding}
-            className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            className="rounded-lg bg-slate-800 dark:bg-slate-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
           >
             {adding ? '…' : 'Добавить'}
           </button>
         </form>
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
           «Это вы» — новые расходы по умолчанию будут от вашего имени.
         </p>
       </section>
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm">
-        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">
+      <section className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
+        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           Общий бюджет
         </h2>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-400 dark:text-slate-500">
           Для пары или компании с общими деньгами: траты делятся по людям, но баланс и расчёты
           считаются на весь кошелёк.
         </p>
@@ -193,16 +193,16 @@ export default function InviteTab({
               return (
                 <li
                   key={unit}
-                  className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"
+                  className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800/60 px-3 py-2"
                 >
-                  <span className="text-sm font-medium text-slate-800">{names}</span>
+                  <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{names}</span>
                   <button
                     type="button"
                     onClick={() => {
                       if (!window.confirm(`Разъединить кошелёк «${names}»?`)) return;
                       void handleUnlink(unit);
                     }}
-                    className="text-xs font-medium text-red-500"
+                    className="text-xs font-medium text-red-500 dark:text-red-400"
                   >
                     Разъединить
                   </button>
@@ -214,7 +214,7 @@ export default function InviteTab({
 
         {singles.length >= 2 && (
           <div className="mt-3">
-            <p className="mb-1 text-xs text-slate-500">Отметьте, кто делит один кошелёк:</p>
+            <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Отметьте, кто делит один кошелёк:</p>
             <ul className="space-y-1">
               {singles.map((member) => {
                 const isSelected = selected.has(member.id);
@@ -224,13 +224,13 @@ export default function InviteTab({
                       type="button"
                       onClick={() => toggleSelected(member.id)}
                       className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left ${
-                        isSelected ? 'border-teal-300 bg-teal-50' : 'border-slate-200 bg-white'
+                        isSelected ? 'border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
                       }`}
                     >
-                      <span className="text-sm text-slate-800">{member.name}</span>
+                      <span className="text-sm text-slate-800 dark:text-slate-200">{member.name}</span>
                       <span
                         className={`text-xs font-semibold ${
-                          isSelected ? 'text-teal-700' : 'text-slate-300'
+                          isSelected ? 'text-teal-700 dark:text-teal-300' : 'text-slate-300 dark:text-slate-600'
                         }`}
                       >
                         {isSelected ? '✓' : '+'}
@@ -244,13 +244,13 @@ export default function InviteTab({
               type="button"
               disabled={selected.size < 2}
               onClick={() => void handleLink()}
-              className="mt-2 w-full rounded-lg bg-slate-800 py-2 text-sm font-semibold text-white disabled:opacity-40"
+              className="mt-2 w-full rounded-lg bg-slate-800 dark:bg-slate-700 py-2 text-sm font-semibold text-white disabled:opacity-40"
             >
               Общий кошелёк ({selected.size})
             </button>
           </div>
         )}
-        {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+        {error && <p className="mt-2 text-xs text-red-500 dark:text-red-400">{error}</p>}
       </section>
     </div>
   );

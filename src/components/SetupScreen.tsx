@@ -44,24 +44,24 @@ export default function SetupScreen({ onCreated }: Props) {
   }
 
   const inputClass =
-    'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-base focus:border-teal-500 focus:outline-none';
+    'mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-base focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none';
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-4">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Начать поездку</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Начать поездку</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Вы получите ссылку — любой, кто её откроет, сможет смотреть и добавлять расходы.
         </p>
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
           Уже участвуете в поездке? Откройте ссылку приглашения в Safari и добавьте поездку
           на экран «Домой». Если старая иконка открывает этот экран, удалите её и добавьте заново.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl bg-white p-4 shadow-sm">
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Название поездки</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Название поездки</span>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -71,11 +71,11 @@ export default function SetupScreen({ onCreated }: Props) {
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Валюта расчётов</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Валюта расчётов</span>
           <select
             value={baseCurrency}
             onChange={(e) => setBaseCurrency(e.target.value as CurrencyCode)}
-            className={`${inputClass} bg-white`}
+            className={`${inputClass} bg-white dark:bg-slate-900`}
           >
             {CURRENCY_CODES.map((code) => (
               <option key={code} value={code}>
@@ -83,13 +83,13 @@ export default function SetupScreen({ onCreated }: Props) {
               </option>
             ))}
           </select>
-          <span className="mt-1 block text-xs text-slate-500">
+          <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
             Тратить можно в любой валюте — для балансов всё пересчитается в эту.
           </span>
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Кто едет?</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Кто едет?</span>
           <textarea
             value={membersText}
             onChange={(e) => setMembersText(e.target.value)}
@@ -97,12 +97,12 @@ export default function SetupScreen({ onCreated }: Props) {
             placeholder={'Аня\nБен\nКарл'}
             className={inputClass}
           />
-          <span className="mt-1 block text-xs text-slate-500">
+          <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
             По одному имени в строке (или через запятую). Других можно добавить позже.
           </span>
         </label>
 
-        {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="rounded-lg bg-red-50 dark:bg-red-950/40 p-2 text-sm text-red-700 dark:text-red-300">{error}</p>}
 
         <button
           type="submit"
