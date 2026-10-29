@@ -81,6 +81,12 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
   computed up front; remainder cents go to the payer).
   If the payer is not a participant, allocate the remainder to the first selected
   participants instead; the shares must still sum to the full expense.
+- Jointly-paid expenses («Совместная оплата») store what each participant
+  handed over as optional `split.paidMinor` (Σ paidMinor = amountMinor; lives in
+  the splits jsonb — no schema migration). `payerId` is the largest contributor
+  (ties → member order; display/legacy only). `computeBalances` nets such
+  expenses per participant as payment − share, branching on whether ANY split
+  of the expense carries `paidMinor` (all-or-nothing per expense).
 - Realtime may deliver a successful write before its API response arrives.
   Merge inserted rows by ID, including members/payments/transfers; never append
   an already-present ID. Cached snapshots may contain duplicates from old clients.

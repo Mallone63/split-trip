@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatMinor, type CurrencyCode } from '../lib/currencies';
 import { formatRate } from '../lib/fx';
+import { expensePayers } from '../lib/split';
 import { readMineOnlyPref, writeMineOnlyPref } from '../lib/prefs';
 import type { Expense, Member } from '../lib/types';
 
@@ -140,6 +141,11 @@ export default function ExpenseList({
             {dayExpenses.map((expense) => {
               const expanded = expandedId === expense.id;
               const participantCount = expense.splits.length;
+              const payers = expensePayers(expense);
+              const paidBy =
+                payers.length === 1
+                  ? `Оплатил(а) ${nameOf(payers[0].memberId)}`
+                  : `Оплатили ${payers.map((p) => nameOf(p.memberId)).join(', ')}`;
               return (
                 <li key={expense.id}>
                   <button
@@ -152,7 +158,7 @@ export default function ExpenseList({
                         {expense.title}
                       </span>
                       <span className="block text-xs text-slate-400 dark:text-slate-500">
-                        Оплатил(а) {nameOf(expense.payerId)} · {participantCount} чел.
+                        {paidBy} · {participantCount} чел.
                       </span>
                     </span>
                     <span className="shrink-0 text-right">
@@ -173,14 +179,22 @@ export default function ExpenseList({
                         1 {expense.currency} = {formatRate(expense.fxRate)} {baseCurrency}
                       </p>
                       <ul className="space-y-1">
-                        {expense.splits.map((split) => (
-                          <li key={split.memberId} className="flex justify-between text-sm">
-                            <span className="text-slate-600 dark:text-slate-400">{nameOf(split.memberId)}</span>
-                            <span className="text-slate-800 dark:text-slate-200">
-                              {formatMinor(split.amountMinor, expense.currency)}
-                            </span>
-                          </li>
-                        ))}
+                        {expense.splits.map((split) => {
+                          const paid = split.paidMinor ?? 0;
+                          return (
+                            <li key={split.memberId} className="flex justify-between text-sm">
+                              <span className="text-slate-600 dark:text-slate-400">{nameOf(split.memberId)}</span>
+                              <span className="text-slate-800 dark:text-slate-200">
+                                {formatMinor(split.amountMinor, expense.currency)}
+                                {paid > 0 && (
+                                  <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
+                                    заплатил(а) {formatMinor(paid, expense.currency)}
+                                  </span>
+                                )}
+                              </span>
+                            </li>
+                          );
+                        })}
                       </ul>
                       <button
                         type="button"

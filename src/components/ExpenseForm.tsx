@@ -10,7 +10,7 @@ import {
 } from '../lib/currencies';
 import { errorMessage } from '../lib/errors';
 import { formatRate, suggestRate, toBaseMinor } from '../lib/fx';
-import { materializeEqualSplit, sumSplits, validateExactSplit } from '../lib/split';
+import { materializeEqualSplit, materializePaidSplit } from '../lib/split';
 import type { Member, Split } from '../lib/types';
 
 interface Props {
@@ -21,7 +21,7 @@ interface Props {
   onCancel: () => void;
 }
 
-type SplitMode = 'equal' | 'exact';
+type SplitMode = 'equal' | 'paid';
 type RateStatus = 'loading' | 'ready' | 'unavailable';
 
 export default function ExpenseForm({
@@ -38,7 +38,7 @@ export default function ExpenseForm({
   const [spentAt, setSpentAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [mode, setMode] = useState<SplitMode>('equal');
   const [selected, setSelected] = useState<Set<string>>(() => new Set(members.map((m) => m.id)));
-  const [exactAmounts, setExactAmounts] = useState<Record<string, string>>({});
+  const [paidAmounts, setPaidAmounts] = useState<Record<string, string>>({});
   const [rateStr, setRateStr] = useState('');
   const [rateStatus, setRateStatus] = useState<RateStatus>('loading');
   const [submitting, setSubmitting] = useState(false);
@@ -64,40 +64,63 @@ export default function ExpenseForm({
     };
   }, [currency, baseCurrency]);
 
-  const amount = parseAmount(amountStr);
-  const amountMinor = Number.isFinite(amount) && amount > 0 ? toMinor(amount, currency) : 0;
+  const typedAmount = parseAmount(amountStr);
+  const typedAmountMinor =
+    Number.isFinite(typedAmount) && typedAmount > 0 ? toMinor(typedAmount, currency) : 0;
   const rate = parseAmount(rateStr);
   const rateValid = Number.isFinite(rate) && rate > 0;
 
   const equalSplits = useMemo(() => {
-    if (mode !== 'equal' || amountMinor <= 0 || selected.size === 0) return [];
+    if (mode !== 'equal' || typedAmountMinor <= 0 || selected.size === 0) return [];
     const participants = memberOrder.filter((id) => selected.has(id));
-    return materializeEqualSplit(amountMinor, participants, payerId);
-  }, [mode, amountMinor, selected, memberOrder, payerId]);
+    return materializeEqualSplit(typedAmountMinor, participants, payerId);
+  }, [mode, typedAmountMinor, selected, memberOrder, payerId]);
 
-  const exactSplits = useMemo(() => {
-    if (mode !== 'exact') return [];
+  // Совместная оплата: сколько каждый участник передал (наличные/карта).
+  const paidEntries = useMemo(() => {
+    if (mode !== 'paid') return [];
     return memberOrder.flatMap((id) => {
-      const value = parseAmount(exactAmounts[id] ?? '');
+      const value = parseAmount(paidAmounts[id] ?? '');
       return Number.isFinite(value) && value > 0
         ? [{ memberId: id, amountMinor: toMinor(value, currency) }]
         : [];
     });
-  }, [mode, memberOrder, exactAmounts, currency]);
+  }, [mode, memberOrder, paidAmounts, currency]);
 
-  const splits: Split[] = mode === 'equal' ? equalSplits : exactSplits;
-  const exactCheck = mode === 'exact' ? validateExactSplit(splits, amountMinor) : null;
-  const splitValid = mode === 'equal' ? splits.length > 0 : exactCheck?.ok === true;
+  const paidSplit = useMemo(() => {
+    if (mode !== 'paid' || paidEntries.length === 0 || selected.size === 0) return null;
+    const participants = memberOrder.filter((id) => selected.has(id));
+    try {
+      return materializePaidSplit(paidEntries, participants, memberOrder);
+    } catch {
+      return null; // invalid input keeps the form unsaveable
+    }
+  }, [mode, paidEntries, selected, memberOrder]);
+
+  // In 'paid' mode the total is derived — it is the sum of the handed-over amounts.
+  const amountMinor =
+    mode === 'equal' ? typedAmountMinor : paidEntries.reduce((sum, entry) => sum + entry.amountMinor, 0);
+  const splits: Split[] = mode === 'equal' ? equalSplits : (paidSplit?.splits ?? []);
+  const splitValid = mode === 'equal' ? splits.length > 0 : paidSplit !== null;
   const canSave =
     title.trim().length > 0 && amountMinor > 0 && rateValid && splitValid && !submitting;
 
   function toggleMember(memberId: string) {
+    const wasSelected = selected.has(memberId);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(memberId)) next.delete(memberId);
       else next.add(memberId);
       return next;
     });
+    if (wasSelected) {
+      // A deselected participant is no longer a payer; drop their entered amount.
+      setPaidAmounts((prev) => {
+        const next = { ...prev };
+        delete next[memberId];
+        return next;
+      });
+    }
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -111,7 +134,8 @@ export default function ExpenseForm({
         0,
       );
       await onSubmit({
-        payerId,
+        // 'paid' mode has several payers; the DB column keeps the primary one.
+        payerId: mode === 'paid' ? (paidSplit?.primaryPayerId ?? payerId) : payerId,
         title: title.trim(),
         currency,
         amountMinor,
@@ -152,16 +176,25 @@ export default function ExpenseForm({
         </label>
 
         <div className="flex gap-2">
-          <label className="block min-w-0 flex-1">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Сумма</span>
-            <input
-              value={amountStr}
-              onChange={(e) => setAmountStr(e.target.value)}
-              inputMode="decimal"
-              placeholder={CURRENCIES[currency].symbol}
-              className={inputClass}
-            />
-          </label>
+          {mode === 'equal' ? (
+            <label className="block min-w-0 flex-1">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Сумма</span>
+              <input
+                value={amountStr}
+                onChange={(e) => setAmountStr(e.target.value)}
+                inputMode="decimal"
+                placeholder={CURRENCIES[currency].symbol}
+                className={inputClass}
+              />
+            </label>
+          ) : (
+            <div className="block min-w-0 flex-1">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Сумма</span>
+              <div className={`${inputClass} bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400`}>
+                {amountMinor > 0 ? formatMinor(amountMinor, currency) : 'из оплат ниже'}
+              </div>
+            </div>
+          )}
           <label className="block w-32 shrink-0">
             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Валюта</span>
             <select
@@ -179,20 +212,22 @@ export default function ExpenseForm({
         </div>
 
         <div className="flex gap-2">
-          <label className="block min-w-0 flex-1">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Кто платил</span>
-            <select
-              value={payerId}
-              onChange={(e) => setPayerId(e.target.value)}
-              className={`${inputClass} bg-white dark:bg-slate-900`}
-            >
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {mode === 'equal' && (
+            <label className="block min-w-0 flex-1">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Кто платил</span>
+              <select
+                value={payerId}
+                onChange={(e) => setPayerId(e.target.value)}
+                className={`${inputClass} bg-white dark:bg-slate-900`}
+              >
+                {members.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="block min-w-0 flex-1">
             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Дата</span>
             <input
@@ -230,7 +265,7 @@ export default function ExpenseForm({
 
       <div className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
         <div className="mb-3 flex rounded-lg bg-slate-100 dark:bg-slate-800 p-1 text-sm font-medium">
-          {(['equal', 'exact'] as SplitMode[]).map((modeOption) => (
+          {(['equal', 'paid'] as SplitMode[]).map((modeOption) => (
             <button
               key={modeOption}
               type="button"
@@ -239,7 +274,7 @@ export default function ExpenseForm({
                 mode === modeOption ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              {modeOption === 'equal' ? 'Поровну' : 'По суммам'}
+              {modeOption === 'equal' ? 'Поровну' : 'Совместная оплата'}
             </button>
           ))}
         </div>
@@ -274,34 +309,61 @@ export default function ExpenseForm({
           </ul>
         )}
 
-        {mode === 'exact' && (
-          <div className="space-y-2">
-            {members.map((member) => (
-              <label key={member.id} className="flex items-center gap-3">
-                <span className="w-24 shrink-0 truncate text-sm text-slate-800 dark:text-slate-200">{member.name}</span>
-                <input
-                  value={exactAmounts[member.id] ?? ''}
-                  onChange={(e) =>
-                    setExactAmounts((prev) => ({ ...prev, [member.id]: e.target.value }))
-                  }
-                  inputMode="decimal"
-                  placeholder="0"
-                  className="min-w-0 flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-right text-sm focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
-                />
-              </label>
-            ))}
+        {mode === 'paid' && (
+          <div className="space-y-1">
+            {members.map((member) => {
+              const isSelected = selected.has(member.id);
+              const share = paidSplit?.splits.find((s) => s.memberId === member.id)?.amountMinor ?? 0;
+              const paid = paidEntries.find((entry) => entry.memberId === member.id)?.amountMinor ?? 0;
+              return (
+                <div
+                  key={member.id}
+                  className={`rounded-lg border px-3 py-2 ${
+                    isSelected
+                      ? 'border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 opacity-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleMember(member.id)}
+                      className="min-w-0 flex-1 text-left text-sm text-slate-800 dark:text-slate-200"
+                    >
+                      {member.name}
+                      {member.id === paidSplit?.primaryPayerId ? ' (плательщик)' : ''}
+                    </button>
+                    {isSelected && (
+                      <input
+                        value={paidAmounts[member.id] ?? ''}
+                        onChange={(e) =>
+                          setPaidAmounts((prev) => ({ ...prev, [member.id]: e.target.value }))
+                        }
+                        inputMode="decimal"
+                        placeholder="0"
+                        aria-label={`Заплатил(а): ${member.name}`}
+                        className="w-28 shrink-0 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-right text-sm focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
+                      />
+                    )}
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                    <span>{paid > 0 ? `заплатил(а) ${formatMinor(paid, currency)}` : 'не платил(а)'}</span>
+                    <span>доля {isSelected && amountMinor > 0 ? formatMinor(share, currency) : '—'}</span>
+                  </div>
+                </div>
+              );
+            })}
             <p
               className={`text-right text-xs font-medium ${
-                amountMinor > 0 && sumSplits(exactSplits) === amountMinor
+                amountMinor > 0
                   ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-red-500 dark:text-red-400'
+                  : 'text-slate-400 dark:text-slate-500'
               }`}
             >
-              {formatMinor(sumSplits(exactSplits), currency)} из {formatMinor(amountMinor, currency)}
+              {amountMinor > 0
+                ? `Итого ${formatMinor(amountMinor, currency)} на ${selected.size} чел.`
+                : 'Отметьте участников и введите, кто сколько заплатил'}
             </p>
-            {exactCheck && !exactCheck.ok && amountMinor > 0 && (
-              <p className="text-xs text-red-500 dark:text-red-400">{exactCheck.error}</p>
-            )}
           </div>
         )}
       </div>

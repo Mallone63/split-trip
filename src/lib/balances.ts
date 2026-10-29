@@ -23,7 +23,9 @@ export interface Settlement {
  * (settling up, same currency) move the nets back toward zero. Debt transfers
  * close the debt in the source ledger and open it in the target ledger — the
  * matching side is applied per ledger. Balances always sum to exactly zero
- * inside each ledger.
+ * inside each ledger. An expense paid jointly by several members (splits
+ * carrying `paidMinor`) nets each participant as payment − share; `payerId`
+ * then only names the primary payer (largest contribution).
  */
 export function computeBalances(
   members: Member[],
@@ -34,9 +36,19 @@ export function computeBalances(
 ): Balance[] {
   const net = new Map<string, number>(members.map((member) => [member.id, 0]));
   for (const expense of expenses) {
+    // A jointly-paid expense («Совместная оплата») records how much each
+    // participant handed over in split.paidMinor; everyone nets their payment
+    // minus their equal share, so payerId (the primary payer) is display-only.
+    // Legacy expenses have no paidMinor and credit the single payer instead.
+    // The check is per expense: splits of one expense are all-or-nothing.
+    const jointlyPaid = expense.splits.some((split) => split.paidMinor != null);
     for (const split of expense.splits) {
       net.set(split.memberId, (net.get(split.memberId) ?? 0) - split.amountMinor);
-      net.set(expense.payerId, (net.get(expense.payerId) ?? 0) + split.amountMinor);
+      if (jointlyPaid) {
+        net.set(split.memberId, (net.get(split.memberId) ?? 0) + (split.paidMinor ?? 0));
+      } else {
+        net.set(expense.payerId, (net.get(expense.payerId) ?? 0) + split.amountMinor);
+      }
     }
   }
   for (const payment of payments) {

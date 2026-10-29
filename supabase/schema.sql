@@ -29,7 +29,10 @@ create table public.expenses (
   amount numeric not null check (amount > 0),      -- integer minor units (e.g. cents)
   fx_rate numeric not null check (fx_rate > 0),    -- base-currency units per 1 unit of `currency`
   base_amount numeric not null check (base_amount > 0), -- integer minor units of the base currency
-  splits jsonb not null,                           -- [{ "memberId": "...", "amountMinor": 1234 }]
+  splits jsonb not null,                           -- [{ "memberId": "...", "amountMinor": 1234, "paidMinor": 5678 }]
+                                                   -- paidMinor (optional): how much this member handed over when
+                                                   -- the expense was paid jointly; Σ paidMinor = amount, payer_id
+                                                   -- stores the largest contributor (display/legacy only)
   spent_at date not null default current_date,
   created_at timestamptz not null default now()
 );

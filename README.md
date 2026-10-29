@@ -7,7 +7,9 @@ whom. Built for one trip, no accounts — the invite link is the access control.
   exchange rate on entry and all balances are shown in the trip's settlement
   currency.
 - **Splits:** equal split among selected people (tap someone off if they
-  weren't part of an expense) or exact amounts per person.
+  weren't part of an expense), or a jointly-paid entry («Совместная оплата»)
+  where each participant records how much they handed over — the total is the
+  sum of the payments and is still divided equally among the participants.
 - **Settle up:** suggested minimal transfers (greedy min-cash-flow).
 - **Shared wallets:** pair up members (e.g. a couple) — splits stay per-person,
   but balances and settlements are computed per wallet.

@@ -38,7 +38,9 @@ function validBundle(value: unknown, tripId: string): value is TripBundle {
       typeof row.fxRate === 'number' && Number.isFinite(row.fxRate) &&
       text(row.spentAt) && /^\d{4}-\d{2}-\d{2}$/.test(row.spentAt) &&
       optionalText(row.createdAt) && Array.isArray(row.splits) &&
-      row.splits.every((split) => object(split) && text(split.memberId) && amount(split.amountMinor))) &&
+      row.splits.every((split) => object(split) && text(split.memberId) && amount(split.amountMinor) &&
+        // Optional: how much this member handed over in a jointly-paid expense.
+        (split.paidMinor == null || amount(split.paidMinor)))) &&
     rows('payments', (row) => text(row.payerId) && text(row.receiverId) &&
       amount(row.amountMinor) && (row.currency == null || currency(row.currency)) &&
       (row.paidCurrency == null || currency(row.paidCurrency)) &&

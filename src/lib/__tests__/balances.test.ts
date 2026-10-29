@@ -54,6 +54,56 @@ describe('computeBalances', () => {
     expect(balances.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
   });
 
+  it('nets jointly-paid expenses as payment − share per participant', () => {
+    // Ana handed over 6000 and Ben 4000; all three share the 10000 equally
+    // (3334 / 3333 / 3333, remainder cent to the primary payer Ana).
+    const expenses: Expense[] = [
+      mkExpense({
+        payerId: 'ana', // primary payer = largest contribution, display-only here
+        amountMinor: 10000,
+        splits: [
+          { memberId: 'ana', amountMinor: 3334, paidMinor: 6000 },
+          { memberId: 'ben', amountMinor: 3333, paidMinor: 4000 },
+          { memberId: 'carl', amountMinor: 3333 },
+        ],
+      }),
+    ];
+
+    const balances = computeBalances(members, expenses, 'USD');
+    const byId = new Map(balances.map((b) => [b.memberId, b.netMinor]));
+    expect(byId.get('ana')).toBe(2666); // paid 6000, owes 3334
+    expect(byId.get('ben')).toBe(667); // paid 4000, owes 3333
+    expect(byId.get('carl')).toBe(-3333); // paid nothing, owes 3333
+    expect(balances.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
+  });
+
+  it('decides per expense: legacy expenses keep crediting their single payerId', () => {
+    const expenses: Expense[] = [
+      mkExpense({
+        payerId: 'ana',
+        amountMinor: 10000,
+        splits: [
+          { memberId: 'ana', amountMinor: 3334, paidMinor: 6000 },
+          { memberId: 'ben', amountMinor: 3333, paidMinor: 4000 },
+          { memberId: 'carl', amountMinor: 3333 },
+        ],
+      }),
+      // Legacy expense without paidMinor: Dana paid her own 900 — nets to zero.
+      mkExpense({
+        payerId: 'dana',
+        amountMinor: 900,
+        splits: [{ memberId: 'dana', amountMinor: 900 }],
+      }),
+    ];
+
+    const balances = computeBalances(members, expenses, 'USD');
+    const byId = new Map(balances.map((b) => [b.memberId, b.netMinor]));
+    expect(byId.get('ana')).toBe(2666); // unaffected by the legacy expense
+    expect(byId.get('dana')).toBe(0);
+    expect(byId.get('carl')).toBe(-3333); // payerId 'dana' must not swallow carl's share
+    expect(balances.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
+  });
+
   it('keeps separate ledgers independent: each currency nets inside itself', () => {
     const expenses: Expense[] = [
       // RUB ledger: Ana pays ₽3,000.00, 3 of 4 took part → ₽1,000.00 each.

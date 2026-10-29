@@ -262,4 +262,27 @@ describe('trip regression audit', () => {
     expect(container.querySelector<HTMLInputElement>('input[placeholder="Ужин в раменной"]')?.value).toBe('Черновик');
     expect(container.querySelector<HTMLInputElement>('input[inputmode="decimal"]')?.value).toBe('1234');
   });
+
+  it('saves a jointly-paid expense: total = sum of paid amounts, equal shares, paidMinor recorded', async () => {
+    load.mockResolvedValue({ ...bundle(), members });
+    vi.mocked(addExpense).mockResolvedValue(expense);
+    await render();
+    await chooseTab(1);
+    await click('+ Добавить');
+    await input('input[placeholder="Ужин в раменной"]', 'Маркет');
+    await click('Совместная оплата');
+    await input('input[aria-label="Заплатил(а): Аня"]', '1000');
+    await input('input[aria-label="Заплатил(а): Бен"]', '500');
+    await click('Сохранить расход');
+    expect(addExpense).toHaveBeenCalledTimes(1);
+    const arg = vi.mocked(addExpense).mock.calls[0][1];
+    expect(arg.title).toBe('Маркет');
+    expect(arg.amountMinor).toBe(1500); // 1000 + 500 JPY, derived from the payments
+    expect(arg.payerId).toBe('ana'); // the primary payer (largest contribution)
+    expect(arg.splits).toEqual([
+      { memberId: 'ana', amountMinor: 750, paidMinor: 1000 },
+      { memberId: 'ben', amountMinor: 750, paidMinor: 500 },
+    ]);
+    expect(arg.baseAmountMinor).toBe(1500); // JPY is the trip base at rate 1
+  });
 });
