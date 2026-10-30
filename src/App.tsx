@@ -288,7 +288,6 @@ export default function App() {
             <ExpenseForm
               members={bundle.members}
               baseCurrency={bundle.trip.baseCurrency}
-              defaultPayerId={meId ?? bundle.members[0]?.id ?? ''}
               onSubmit={handleAddExpense}
               onCancel={() => setAddingExpense(false)}
             />

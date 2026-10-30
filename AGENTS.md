@@ -77,16 +77,22 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
 - Every expense stores `fxRate` frozen at entry time. `baseAmountMinor` is the sum
   of **per-split** base conversions — this is what keeps balances summing to zero.
   Do not "simplify" it to `amount × fxRate`.
-- Splits are fully materialized in `expenses.splits` at entry time (equal split
-  computed up front; remainder cents go to the payer).
-  If the payer is not a participant, allocate the remainder to the first selected
-  participants instead; the shares must still sum to the full expense.
-- Jointly-paid expenses («Совместная оплата») store what each participant
-  handed over as optional `split.paidMinor` (Σ paidMinor = amountMinor; lives in
-  the splits jsonb — no schema migration). `payerId` is the largest contributor
-  (ties → member order; display/legacy only). `computeBalances` nets such
-  expenses per participant as payment − share, branching on whether ANY split
-  of the expense carries `paidMinor` (all-or-nothing per expense).
+- Splits are fully materialized in `expenses.splits` at entry time; the shares
+  must always sum to the full expense.
+- The expense form has two tabs. «Поровну»: equal shares computed up front;
+  remainder cents go to the primary payer (largest contribution; if they are
+  not a participant, to the first selected participants instead). Several
+  participants may have handed the money over — each selected member gets a
+  per-person payment input, and the total is the sum of the payments.
+  «Разделить счёт»: every participant holds an exact bill share
+  (`split.amountMinor`) and may record what they handed over; Σ shares =
+  Σ paidMinor = expense amount is validated at entry (keeps balances zero-sum).
+- Expenses paid by several people store what each participant handed over as
+  optional `split.paidMinor` (lives in the splits jsonb — no schema migration).
+  `payerId` is the largest contributor (ties → member order; display/legacy
+  only). `computeBalances` nets such expenses per participant as payment −
+  share, branching on whether ANY split of the expense carries `paidMinor`
+  (all-or-nothing per expense).
 - Realtime may deliver a successful write before its API response arrives.
   Merge inserted rows by ID, including members/payments/transfers; never append
   an already-present ID. Cached snapshots may contain duplicates from old clients.

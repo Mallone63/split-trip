@@ -18,10 +18,11 @@ export interface Member {
 export interface Split {
   memberId: string;
   amountMinor: number;
-  /** How much this member handed over when the expense was paid jointly
-   * («Совместная оплата»); absent or 0 for members who paid nothing. The sum
-   * over all splits equals the expense total, and the member with the largest
-   * `paidMinor` is stored as the expense's payerId (display/legacy only). */
+  /** How much this member handed over when the expense was paid by several
+   * people (several payers on «Поровну», or exact shares on «Разделить
+   * счёт»); absent or 0 for members who paid nothing. The sum over all splits
+   * equals the expense total, and the member with the largest `paidMinor` is
+   * stored as the expense's payerId (display/legacy only). */
   paidMinor?: number;
 }
 

@@ -211,7 +211,7 @@ describe('trip regression audit', () => {
     await chooseTab(1);
     await click('+ Добавить');
     await input('input[placeholder="Ужин в раменной"]', 'Ужин');
-    await input('input[inputmode="decimal"]', '1000');
+    await input('input[aria-label="Заплатил(а): Аня"]', '1000');
     await click('Сохранить расход');
     expect(addExpense).toHaveBeenCalledTimes(1);
     await act(async () => vi.mocked(subscribeToExpenses).mock.calls[0][1]());
@@ -257,20 +257,19 @@ describe('trip regression audit', () => {
     await chooseTab(1);
     await click('+ Добавить');
     await input('input[placeholder="Ужин в раменной"]', 'Черновик');
-    await input('input[inputmode="decimal"]', '1234');
+    await input('input[aria-label="Заплатил(а): Аня"]', '1234');
     await act(async () => window.dispatchEvent(new Event('online')));
     expect(container.querySelector<HTMLInputElement>('input[placeholder="Ужин в раменной"]')?.value).toBe('Черновик');
-    expect(container.querySelector<HTMLInputElement>('input[inputmode="decimal"]')?.value).toBe('1234');
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Заплатил(а): Аня"]')?.value).toBe('1234');
   });
 
-  it('saves a jointly-paid expense: total = sum of paid amounts, equal shares, paidMinor recorded', async () => {
+  it('saves a «Поровну» expense paid by several people: total = sum of payments, equal shares, paidMinor recorded', async () => {
     load.mockResolvedValue({ ...bundle(), members });
     vi.mocked(addExpense).mockResolvedValue(expense);
     await render();
     await chooseTab(1);
     await click('+ Добавить');
     await input('input[placeholder="Ужин в раменной"]', 'Маркет');
-    await click('Совместная оплата');
     await input('input[aria-label="Заплатил(а): Аня"]', '1000');
     await input('input[aria-label="Заплатил(а): Бен"]', '500');
     await click('Сохранить расход');
@@ -284,5 +283,46 @@ describe('trip regression audit', () => {
       { memberId: 'ben', amountMinor: 750, paidMinor: 500 },
     ]);
     expect(arg.baseAmountMinor).toBe(1500); // JPY is the trip base at rate 1
+  });
+
+  it('saves a «Разделить счёт» expense with exact shares and payments, blocking a mismatch', async () => {
+    const four: Member[] = [
+      ...members,
+      { id: 'carl', tripId: 'trip-a', name: 'Крис' },
+      { id: 'dana', tripId: 'trip-a', name: 'Дана' },
+    ];
+    load.mockResolvedValue({ ...bundle(), members: four });
+    vi.mocked(addExpense).mockResolvedValue(expense);
+    await render();
+    await chooseTab(1);
+    await click('+ Добавить');
+    await input('input[placeholder="Ужин в раменной"]', 'Счёт');
+    await click('Разделить счёт');
+    // Shares 500 + 700 + 300 + 400 = 1900; the first two paid equally.
+    await input('input[aria-label="Доля счёта: Аня"]', '500');
+    await input('input[aria-label="Доля счёта: Бен"]', '700');
+    await input('input[aria-label="Доля счёта: Крис"]', '300');
+    await input('input[aria-label="Доля счёта: Дана"]', '400');
+    await input('input[aria-label="Заплатил(а): Аня"]', '950');
+    await input('input[aria-label="Заплатил(а): Бен"]', '900');
+    expect(container.textContent).toContain('суммы должны совпадать'); // 1850 ≠ 1900
+    const save = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Сохранить расход',
+    );
+    expect(save!.disabled).toBe(true);
+    expect(addExpense).not.toHaveBeenCalled();
+    await input('input[aria-label="Заплатил(а): Бен"]', '950');
+    await click('Сохранить расход');
+    expect(addExpense).toHaveBeenCalledTimes(1);
+    const arg = vi.mocked(addExpense).mock.calls[0][1];
+    expect(arg.amountMinor).toBe(1900); // Σ shares: 500 + 700 + 300 + 400
+    expect(arg.payerId).toBe('ana'); // 950 = 950 → member order breaks the tie
+    expect(arg.splits).toEqual([
+      { memberId: 'ana', amountMinor: 500, paidMinor: 950 },
+      { memberId: 'ben', amountMinor: 700, paidMinor: 950 },
+      { memberId: 'carl', amountMinor: 300 },
+      { memberId: 'dana', amountMinor: 400 },
+    ]);
+    expect(arg.baseAmountMinor).toBe(1900); // JPY is the trip base at rate 1
   });
 });

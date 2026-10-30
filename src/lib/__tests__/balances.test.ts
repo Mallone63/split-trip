@@ -77,6 +77,31 @@ describe('computeBalances', () => {
     expect(balances.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
   });
 
+  it('nets «Разделить счёт» expenses: exact shares with partial payers stay zero-sum', () => {
+    // 4 people hold shares 50.00 / 70.00 / 30.00 / 40.00 (190.00 total); the
+    // first two paid 95.00 each. Everyone nets payment − share.
+    const expenses: Expense[] = [
+      mkExpense({
+        payerId: 'ana', // primary payer (tie → member order), display-only here
+        amountMinor: 19000,
+        splits: [
+          { memberId: 'ana', amountMinor: 5000, paidMinor: 9500 },
+          { memberId: 'ben', amountMinor: 7000, paidMinor: 9500 },
+          { memberId: 'carl', amountMinor: 3000 },
+          { memberId: 'dana', amountMinor: 4000 },
+        ],
+      }),
+    ];
+
+    const balances = computeBalances(members, expenses, 'USD');
+    const byId = new Map(balances.map((b) => [b.memberId, b.netMinor]));
+    expect(byId.get('ana')).toBe(4500); // paid 9500, owes 5000
+    expect(byId.get('ben')).toBe(2500); // paid 9500, owes 7000
+    expect(byId.get('carl')).toBe(-3000); // paid nothing, owes 3000
+    expect(byId.get('dana')).toBe(-4000); // paid nothing, owes 4000
+    expect(balances.reduce((sum, b) => sum + b.netMinor, 0)).toBe(0);
+  });
+
   it('decides per expense: legacy expenses keep crediting their single payerId', () => {
     const expenses: Expense[] = [
       mkExpense({

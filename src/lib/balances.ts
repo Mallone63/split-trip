@@ -36,9 +36,9 @@ export function computeBalances(
 ): Balance[] {
   const net = new Map<string, number>(members.map((member) => [member.id, 0]));
   for (const expense of expenses) {
-    // A jointly-paid expense («Совместная оплата») records how much each
-    // participant handed over in split.paidMinor; everyone nets their payment
-    // minus their equal share, so payerId (the primary payer) is display-only.
+    // An expense paid by several members records how much each participant
+    // handed over in split.paidMinor; everyone nets their payment minus their
+    // share, so payerId (the primary payer) is display-only.
     // Legacy expenses have no paidMinor and credit the single payer instead.
     // The check is per expense: splits of one expense are all-or-nothing.
     const jointlyPaid = expense.splits.some((split) => split.paidMinor != null);

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { expensePayers, materializeEqualSplit, materializePaidSplit, sumSplits } from '../split';
+import {
+  expensePayers,
+  materializeCustomSplit,
+  materializeEqualSplit,
+  materializePaidSplit,
+  sumSplits,
+} from '../split';
 import type { Expense } from '../types';
 
 describe('materializeEqualSplit', () => {
@@ -112,6 +118,89 @@ describe('materializePaidSplit', () => {
     ).toThrow();
     expect(() =>
       materializePaidSplit([{ memberId: 'ana', amountMinor: 100 }], ['ben', 'carl'], order),
+    ).toThrow();
+  });
+});
+
+describe('materializeCustomSplit', () => {
+  const order = ['ana', 'ben', 'carl', 'dana'];
+
+  it('stores exact per-person shares with per-person payments (500/700/300/400, first two paid equally)', () => {
+    const { splits, primaryPayerId } = materializeCustomSplit(
+      [
+        { memberId: 'ana', amountMinor: 500 },
+        { memberId: 'ben', amountMinor: 700 },
+        { memberId: 'carl', amountMinor: 300 },
+        { memberId: 'dana', amountMinor: 400 },
+      ],
+      [
+        { memberId: 'ana', amountMinor: 950 },
+        { memberId: 'ben', amountMinor: 950 },
+      ],
+      order,
+      order,
+    );
+    expect(primaryPayerId).toBe('ana'); // 950 = 950 → member order breaks the tie
+    expect(sumSplits(splits)).toBe(1900);
+    expect(splits).toEqual([
+      { memberId: 'ana', amountMinor: 500, paidMinor: 950 },
+      { memberId: 'ben', amountMinor: 700, paidMinor: 950 },
+      { memberId: 'carl', amountMinor: 300 },
+      { memberId: 'dana', amountMinor: 400 },
+    ]);
+  });
+
+  it('rejects payments that do not sum to the bill shares', () => {
+    expect(() =>
+      materializeCustomSplit(
+        [
+          { memberId: 'ana', amountMinor: 500 },
+          { memberId: 'ben', amountMinor: 700 },
+        ],
+        [{ memberId: 'ana', amountMinor: 1000 }],
+        order,
+        order,
+      ),
+    ).toThrow();
+  });
+
+  it('allows a member who paid while holding no share of the bill', () => {
+    const { splits, primaryPayerId } = materializeCustomSplit(
+      [{ memberId: 'ana', amountMinor: 1000 }],
+      [{ memberId: 'dana', amountMinor: 1000 }],
+      order,
+      order,
+    );
+    expect(primaryPayerId).toBe('dana');
+    expect(splits).toEqual([
+      { memberId: 'ana', amountMinor: 1000 },
+      { memberId: 'dana', amountMinor: 0, paidMinor: 1000 },
+    ]);
+  });
+
+  it('rejects empty shares, zero/fractional amounts, duplicates and outside participants', () => {
+    expect(() => materializeCustomSplit([], [], order, order)).toThrow();
+    expect(() => materializeCustomSplit([{ memberId: 'ana', amountMinor: 0 }], [], order, order)).toThrow();
+    expect(() =>
+      materializeCustomSplit([{ memberId: 'ana', amountMinor: 1.5 }], [{ memberId: 'ana', amountMinor: 2 }], order, order),
+    ).toThrow();
+    expect(() =>
+      materializeCustomSplit(
+        [
+          { memberId: 'ana', amountMinor: 500 },
+          { memberId: 'ana', amountMinor: 500 },
+        ],
+        [{ memberId: 'ana', amountMinor: 1000 }],
+        order,
+        order,
+      ),
+    ).toThrow();
+    // Share holder / payer outside the participant list.
+    expect(() =>
+      materializeCustomSplit([{ memberId: 'ana', amountMinor: 500 }], [{ memberId: 'ana', amountMinor: 500 }], ['ben'], order),
+    ).toThrow();
+    expect(() =>
+      materializeCustomSplit([{ memberId: 'ana', amountMinor: 500 }], [{ memberId: 'zed', amountMinor: 500 }], order, order),
     ).toThrow();
   });
 });
