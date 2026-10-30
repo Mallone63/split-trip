@@ -529,7 +529,7 @@ export default function BalanceTab({
                                   inputMode="decimal"
                                   autoFocus
                                   placeholder={partialPlaceholder(settlement, ledger.currency)}
-                                  className="min-w-0 flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-sm focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
+                                  className="min-w-0 flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-base focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
                                 />
                                 <span className="text-xs text-slate-400 dark:text-slate-500">{entryCcy}</span>
                                 <button

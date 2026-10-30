@@ -159,7 +159,7 @@ export default function InviteTab({
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Добавить человека…"
-            className="min-w-0 flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
+            className="min-w-0 flex-1 rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-base focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
           />
           <button
             type="submit"

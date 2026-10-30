@@ -338,7 +338,7 @@ export default function ExpenseForm({
                         inputMode="decimal"
                         placeholder="0"
                         aria-label={`Заплатил(а): ${member.name}`}
-                        className="w-28 shrink-0 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-right text-sm focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
+                        className="w-28 shrink-0 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-right text-base focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
                       />
                     )}
                   </div>
