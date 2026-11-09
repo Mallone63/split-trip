@@ -95,6 +95,9 @@ works at a custom domain or any other static host.
 
 ## Project layout
 
+Optional REST API and MCP integration: see [`server/README.md`](server/README.md).
+It runs separately from the static site and reuses the existing money calculations.
+
 ```
 .github/workflows/  deploy.yml — build & publish to GitHub Pages
 src/lib/        money math: currencies, fx, split, balances (+ unit tests)
