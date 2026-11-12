@@ -79,7 +79,14 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
   Do not "simplify" it to `amount × fxRate`.
 - Splits are fully materialized in `expenses.splits` at entry time; the shares
   must always sum to the full expense.
-- The expense form has two tabs. «Поровну»: equal shares computed up front;
+- The expense form defaults to «Общая трата» on every open. «Личная» accepts
+  a direct amount and uses `meId` plus everyone with the same non-null `unit`.
+  If “me” is missing or stale, require a selection via `onSetMe`; never guess.
+  Materialize ordinary splits with the current member paying the whole amount
+  and equal shares inside their wallet. No DB flag/migration or privacy change:
+  wallet-level debts stay unchanged and existing totals/filters include the expense.
+  Keep personal/shared amount drafts separate when switching tabs.
+- The shared expense split control has two tabs. «Поровну»: equal shares computed up front;
   remainder cents go to the primary payer (largest contribution; if they are
   not a participant, to the first selected participants instead). Several
   participants may have handed the money over — each selected member gets a

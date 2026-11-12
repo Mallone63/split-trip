@@ -26,6 +26,7 @@ import { readTripCache, writeTripCache } from './lib/tripCache';
 import { TRIP_LOAD_TIMEOUT_MS } from './lib/tripLoader';
 import BalanceTab from './components/BalanceTab';
 import { formatMinor } from './lib/currencies';
+import { aggregateByUnit, computeBalances } from './lib/balances';
 import type { Expense, Member } from './lib/types';
 
 const bundle = (name = 'Свежая поездка'): TripBundle => ({
@@ -90,6 +91,12 @@ const input = (selector: string, value: string) => act(async () => {
   const element = container.querySelector<HTMLInputElement>(selector)!;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(element, value);
   element.dispatchEvent(new Event('input', { bubbles: true }));
+});
+const select = (label: string, value: string) => act(async () => {
+  const element = [...container.querySelectorAll('label')]
+    .find((item) => item.querySelector('span')?.textContent === label)!.querySelector('select')!;
+  element.value = value;
+  element.dispatchEvent(new Event('change', { bubbles: true }));
 });
 
 describe('trip loading UI', () => {
@@ -177,6 +184,123 @@ describe('trip loading UI', () => {
     expect(container.textContent).toContain('Создать поездку');
   });
 
+});
+
+describe('personal expense entry', () => {
+  const group: Member[] = [
+    ...members.map((member) => ({ ...member, unit: 'couple' })),
+    { id: 'solo', tripId: 'trip-a', name: 'Ден', unit: null },
+    { id: 'other', tripId: 'trip-a', name: 'Крис' },
+  ];
+  const saveButton = () => container.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+  const personalInput = 'input[inputmode="decimal"][placeholder="0"]';
+  async function open(meId: string | null) {
+    if (meId) window.localStorage.setItem('tripsplit:me:trip-a', meId);
+    load.mockResolvedValue({ ...bundle(), members: group });
+    vi.mocked(addExpense).mockImplementation(async (_, data) => ({ ...expense, ...data }));
+    await render();
+    await chooseTab(1);
+    await click('+ Добавить');
+  }
+
+  it.each(['ana', 'ben', 'solo', 'other'])('saves only the wallet of %s without changing wallet debts', async (meId) => {
+    await open(meId);
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Общая трата');
+    await click('Личная');
+    expect(container.textContent).not.toContain('Разделить счёт');
+    expect(container.querySelector('input[aria-label^="Заплатил"]')).toBeNull();
+    await input('input[placeholder="Ужин в раменной"]', 'Кофе');
+    await input(personalInput, '1001');
+    await click('Сохранить расход');
+    expect(addExpense).toHaveBeenCalledTimes(1);
+    const data = vi.mocked(addExpense).mock.calls[0][1];
+    const coupled = ['ana', 'ben'].includes(meId);
+    expect(data.payerId).toBe(meId);
+    expect(data.amountMinor).toBe(1001);
+    expect(data.baseAmountMinor).toBe(1001);
+    expect(data.splits.map((split) => split.memberId)).toEqual(coupled ? ['ana', 'ben'] : [meId]);
+    expect(data.splits.find((split) => split.memberId === meId)).toEqual({
+      memberId: meId, amountMinor: coupled ? 501 : 1001, paidMinor: 1001,
+    });
+    expect(data.splits.reduce((sum, split) => sum + split.amountMinor, 0)).toBe(1001);
+    const saved = { ...expense, ...data };
+    const existing = { ...expense, splits: [
+      { memberId: 'ana', amountMinor: 500 }, { memberId: 'solo', amountMinor: 500 },
+    ] };
+    const before = aggregateByUnit(group, computeBalances(group, [existing], 'JPY'));
+    const after = aggregateByUnit(group, computeBalances(group, [existing, saved], 'JPY'));
+    expect(after).toEqual(before);
+    // Both partners see the personal expense through the existing wallet-aware filter.
+    await click('Только мои');
+    expect(container.textContent).toContain('Кофе');
+    await click('+ Добавить');
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Общая трата');
+  });
+
+  it.each([null, 'removed-member'])('requires a valid identity instead of guessing when me = %s', async (meId) => {
+    await open(meId);
+    await click('Личная');
+    await input('input[placeholder="Ужин в раменной"]', 'Покупки');
+    await input(personalInput, '500');
+    expect(saveButton().disabled).toBe(true);
+    await select('Кто вы?', 'ben');
+    expect(window.localStorage.getItem('tripsplit:me:trip-a')).toBe('ben');
+    expect(container.textContent).toContain('Аня + Бен');
+    expect(saveButton().disabled).toBe(false);
+    await click('Сохранить расход');
+    expect(vi.mocked(addExpense).mock.calls[0][1].payerId).toBe('ben');
+  });
+
+  it('preserves both drafts, currency, date and custom shares when switching tabs', async () => {
+    await open('ana');
+    await input('input[placeholder="Ужин в раменной"]', 'Черновик');
+    await input('input[type="date"]', '2026-11-10');
+    await select('Валюта', 'RUB');
+    await click('Разделить счёт');
+    await input('input[aria-label="Доля счёта: Аня"]', '100');
+    await input('input[aria-label="Доля счёта: Ден"]', '50');
+    await input('input[aria-label="Заплатил(а): Ден"]', '150');
+    await click('Личная');
+    expect(container.querySelector<HTMLInputElement>(personalInput)?.value).toBe('150');
+    await input(personalInput, '12,35');
+    await click('Общая трата');
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Заплатил(а): Ден"]')?.value).toBe('150');
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Доля счёта: Аня"]')?.value).toBe('100');
+    await click('Личная');
+    expect(container.querySelector<HTMLInputElement>(personalInput)?.value).toBe('12,35');
+    await input('input[placeholder="1 RUB = ? JPY"]', '1.95');
+    await click('Сохранить расход');
+    const data = vi.mocked(addExpense).mock.calls[0][1];
+    expect(data).toMatchObject({ title: 'Черновик', amountMinor: 1235, currency: 'RUB', spentAt: '2026-11-10', fxRate: 1.95, baseAmountMinor: 24 });
+    expect(data.splits).toEqual([
+      { memberId: 'ana', amountMinor: 618, paidMinor: 1235 },
+      { memberId: 'ben', amountMinor: 617 },
+    ]);
+  });
+
+  it('blocks invalid amounts, supports keyboard tabs and retains the draft after a failed save', async () => {
+    await open('solo');
+    const sharedTab = container.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')!;
+    await act(async () => {
+      sharedTab.focus();
+      sharedTab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+    expect(document.activeElement?.textContent).toBe('Личная');
+    expect(document.activeElement?.getAttribute('aria-selected')).toBe('true');
+    await input('input[placeholder="Ужин в раменной"]', 'Кофе');
+    for (const value of ['', '0', '-5', 'abc', '0.001', '1e100']) {
+      await input(personalInput, value);
+      expect(saveButton().disabled, value).toBe(true);
+    }
+    await input(personalInput, '550');
+    vi.mocked(addExpense).mockRejectedValueOnce(new Error('Нет сети'));
+    await click('Сохранить расход');
+    expect(container.textContent).toContain('Нет сети');
+    expect(container.querySelector<HTMLInputElement>(personalInput)?.value).toBe('550');
+    expect(saveButton().disabled).toBe(false);
+    await click('Сохранить расход');
+    expect(addExpense).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('trip regression audit', () => {

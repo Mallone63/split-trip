@@ -14,6 +14,11 @@ whom. Built for one trip, no accounts — the invite link is the access control.
 - **Settle up:** suggested minimal transfers (greedy min-cash-flow).
 - **Shared wallets:** pair up members (e.g. a couple) — splits stay per-person,
   but balances and settlements are computed per wallet.
+- **Personal expenses:** the new-expense form defaults to «Общая трата».
+  Switch to «Личная» to enter a title and amount for yourself or automatically
+  for your shared wallet. No participant selection or group debt is added.
+  If “me” is unset, select yourself once in the form; the choice is remembered.
+  Personal expenses remain visible in the trip's expense history like other entries.
 - **Russian UI:** the interface is in Russian by default (no i18n dependency).
 - **Realtime:** everyone sees new expenses instantly (Supabase realtime).
 - **Install:** iPhone Safari → Share → *Add to Home Screen* → runs standalone.
