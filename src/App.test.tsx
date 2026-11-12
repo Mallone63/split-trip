@@ -27,6 +27,7 @@ import { TRIP_LOAD_TIMEOUT_MS } from './lib/tripLoader';
 import BalanceTab from './components/BalanceTab';
 import { formatMinor } from './lib/currencies';
 import { aggregateByUnit, computeBalances } from './lib/balances';
+import { fetchRates } from './lib/fx';
 import type { Expense, Member } from './lib/types';
 
 const bundle = (name = 'Свежая поездка'): TripBundle => ({
@@ -304,6 +305,67 @@ describe('personal expense entry', () => {
 });
 
 describe('trip regression audit', () => {
+  it('shows the combined trip-currency total using frozen rates and rounded wallet shares', async () => {
+    const group: Member[] = [
+      ...members.map((member) => ({ ...member, unit: 'couple' })),
+      { id: 'den', tripId: 'trip-a', name: 'Ден' },
+    ];
+    const expenses: Expense[] = [
+      { ...expense, id: 'jpy', amountMinor: 1001, baseAmountMinor: 1001, splits: [
+        { memberId: 'ana', amountMinor: 300 },
+        { memberId: 'ben', amountMinor: 400 },
+        { memberId: 'den', amountMinor: 301 },
+      ] },
+      // 0.50 RUB each at the saved rate: 1 JPY + 1 JPY. Converting the
+      // combined 1 RUB would incorrectly give 1 JPY instead of 2 JPY.
+      { ...expense, id: 'rub-pair', currency: 'RUB', amountMinor: 100, fxRate: 1, baseAmountMinor: 2, splits: [
+        { memberId: 'ana', amountMinor: 50 }, { memberId: 'ben', amountMinor: 50 },
+      ] },
+      // Same original currency, a different frozen rate.
+      { ...expense, id: 'rub-solo', payerId: 'den', currency: 'RUB', amountMinor: 100, fxRate: 3, baseAmountMinor: 3,
+        splits: [{ memberId: 'den', amountMinor: 100 }] },
+      { ...expense, id: 'usd', currency: 'USD', amountMinor: 123, fxRate: 100, baseAmountMinor: 123,
+        splits: [{ memberId: 'ana', amountMinor: 123 }] },
+    ];
+    const props = {
+      members: group, expenses, payments: [], transfers: [], baseCurrency: 'JPY' as const,
+      meId: 'ana', onMarkSettled: vi.fn(), onUndoPayment: vi.fn(),
+      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+    };
+    const combinedTotal = () => [...container.querySelectorAll('h2')]
+      .find((heading) => heading.textContent === 'Всего потрачено')!.nextElementSibling!;
+    await act(async () => root.render(<BalanceTab {...props} />));
+    expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(1129, 'JPY')}`);
+    await click('Только мои');
+    expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(825, 'JPY')}`);
+    await act(async () => root.render(<BalanceTab {...props} meId="ben" />));
+    expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(825, 'JPY')}`);
+    await act(async () => root.render(<BalanceTab {...props} meId="den" />));
+    expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(304, 'JPY')}`);
+    await click('Только мои');
+    expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(1129, 'JPY')}`);
+    await act(async () => root.render(<BalanceTab {...props} expenses={[]} />));
+    expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(0, 'JPY')}`);
+  });
+
+  it('formats a decimal trip currency and shows the saved total even when live rates fail', async () => {
+    vi.mocked(fetchRates).mockRejectedValueOnce(new Error('Нет сети'));
+    window.localStorage.setItem('tripsplit:mineOnly', '1');
+    const props = {
+      members, expenses: [{ ...expense, amountMinor: 1001, fxRate: 0.006, baseAmountMinor: 601, splits: [
+        { memberId: 'ana', amountMinor: 500 }, { memberId: 'ben', amountMinor: 501 },
+      ] }], payments: [], transfers: [], baseCurrency: 'USD' as const,
+      meId: 'ana', onMarkSettled: vi.fn(), onUndoPayment: vi.fn(),
+      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+    };
+    const combinedText = () => [...container.querySelectorAll('h2')]
+      .find((heading) => heading.textContent === 'Всего потрачено')!.nextElementSibling!.textContent;
+    await act(async () => root.render(<BalanceTab {...props} />));
+    expect(combinedText()).toBe(`Σ: ${formatMinor(300, 'USD')}`);
+    await click('Только мои');
+    expect(combinedText()).toBe(`Σ: ${formatMinor(601, 'USD')}`);
+  });
+
   it('filters spending by wallet shares in each currency and restores group totals', async () => {
     const group: Member[] = [
       ...members.map((member) => ({ ...member, unit: 'couple' })),
@@ -337,7 +399,7 @@ describe('trip regression audit', () => {
     };
     const totals = () => [...container.querySelectorAll('h2')]
       .find((heading) => heading.textContent === 'Всего потрачено')!.closest('section')!;
-    const amounts = () => [...totals().querySelectorAll('p')].map((p) => p.textContent);
+    const amounts = () => [...totals().querySelectorAll('[aria-label="Расходы по валютам"] p')].map((p) => p.textContent);
     await act(async () => root.render(<BalanceTab {...props} />));
     expect(amounts()).toEqual([formatMinor(12345, 'RUB'), formatMinor(999, 'USD'), formatMinor(2302, 'JPY')]);
     await click('Только мои');
@@ -360,7 +422,7 @@ describe('trip regression audit', () => {
       onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
     };
     const total = () => [...container.querySelectorAll('h2')]
-      .find((heading) => heading.textContent === 'Всего потрачено')!.closest('section')!.querySelector('p')!.textContent;
+      .find((heading) => heading.textContent === 'Всего потрачено')!.closest('section')!.querySelector('[aria-label="Расходы по валютам"] p')!.textContent;
     await act(async () => root.render(<BalanceTab {...props} />));
     expect(total()).toBe(formatMinor(500, 'JPY'));
     const paired = members.map((member) => ({ ...member, unit: 'couple' }));
@@ -383,12 +445,12 @@ describe('trip regression audit', () => {
     await click('Только мои');
     const summary = [...container.querySelectorAll('h2')]
       .find((heading) => heading.textContent === 'Всего потрачено')!.closest('section')!;
-    expect([...summary.querySelectorAll('p')].map((p) => p.textContent)).toEqual(['0']);
+    expect([...summary.querySelectorAll('[aria-label="Расходы по валютам"] p')].map((p) => p.textContent)).toEqual(['0']);
     // A persisted filter must not zero the summary if no valid user is selected.
     await act(async () => root.render(<BalanceTab {...props} meId={null} />));
-    expect(summary.querySelector('p')!.textContent).toBe(formatMinor(1000, 'JPY'));
+    expect(summary.querySelector('[aria-label="Расходы по валютам"] p')!.textContent).toBe(formatMinor(1000, 'JPY'));
     await act(async () => root.render(<BalanceTab {...props} meId="missing" />));
-    expect(summary.querySelector('p')!.textContent).toBe(formatMinor(1000, 'JPY'));
+    expect(summary.querySelector('[aria-label="Расходы по валютам"] p')!.textContent).toBe(formatMinor(1000, 'JPY'));
   });
 
   it('recalculates balances when only debt transfers change, including undo', async () => {

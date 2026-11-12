@@ -15,7 +15,7 @@ import {
   toMinor,
   type CurrencyCode,
 } from '../lib/currencies';
-import { crossRate, fetchRates, type Rates } from '../lib/fx';
+import { crossRate, fetchRates, toBaseMinor, type Rates } from '../lib/fx';
 import { readMineOnlyPref, writeMineOnlyPref } from '../lib/prefs';
 import type { DebtTransfer, Expense, Member, Payment } from '../lib/types';
 
@@ -150,6 +150,21 @@ export default function BalanceTab({
       }, 0),
     })),
     [expenses, mineOnly, myMemberIds],
+  );
+
+  // Use each expense's frozen rate and round each share, as when it was saved.
+  // Today's FX hints and debt repayments must not change historical spending.
+  const spendingBaseTotal = useMemo(
+    () => expenses.reduce((total, expense) => total + (
+      mineOnly && myMemberIds.size > 0
+        ? expense.splits.reduce((sum, split) => sum + (
+            myMemberIds.has(split.memberId)
+              ? toBaseMinor(split.amountMinor, expense.fxRate, expense.currency, baseCurrency)
+              : 0
+          ), 0)
+        : expense.baseAmountMinor
+    ), 0),
+    [expenses, mineOnly, myMemberIds, baseCurrency],
   );
 
   const settlementInvolvesMe = (ledger: Ledger, settlement: Settlement): boolean => {
@@ -357,10 +372,15 @@ export default function BalanceTab({
 
       <section className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
         <div className="flex items-start justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Всего потрачено
-          </h2>
-          <div className="space-y-0.5 text-right">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Всего потрачено
+            </h2>
+            <p className="mt-1 text-sm font-normal text-slate-600 dark:text-slate-400">
+              Σ: {formatMinor(spendingBaseTotal, baseCurrency)}
+            </p>
+          </div>
+          <div role="group" aria-label="Расходы по валютам" className="shrink-0 space-y-0.5 text-right">
             {spendingTotals.some((total) => total.totalMinor !== 0) ? (
               spendingTotals.map((total) =>
                 total.totalMinor === 0 ? null : (
