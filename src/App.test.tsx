@@ -304,6 +304,93 @@ describe('personal expense entry', () => {
 });
 
 describe('trip regression audit', () => {
+  it('filters spending by wallet shares in each currency and restores group totals', async () => {
+    const group: Member[] = [
+      ...members.map((member) => ({ ...member, unit: 'couple' })),
+      { id: 'den', tripId: 'trip-a', name: 'Ден' },
+    ];
+    const expenses: Expense[] = [
+      { ...expense, id: 'shared', amountMinor: 1001, payerId: 'den', splits: [
+        { memberId: 'ana', amountMinor: 334 },
+        { memberId: 'ben', amountMinor: 333 },
+        { memberId: 'den', amountMinor: 334, paidMinor: 1001 },
+      ] },
+      { ...expense, id: 'paid-for-den', amountMinor: 800, splits: [
+        { memberId: 'ana', amountMinor: 0, paidMinor: 800 },
+        { memberId: 'den', amountMinor: 800 },
+      ] },
+      { ...expense, id: 'personal-pair', payerId: 'ben', amountMinor: 501, splits: [
+        { memberId: 'ana', amountMinor: 250 },
+        { memberId: 'ben', amountMinor: 251, paidMinor: 501 },
+      ] },
+      { ...expense, id: 'partner-only', payerId: 'ben', currency: 'RUB', amountMinor: 12345,
+        splits: [{ memberId: 'ben', amountMinor: 12345 }] },
+      { ...expense, id: 'den-personal', payerId: 'den', currency: 'USD', amountMinor: 999,
+        splits: [{ memberId: 'den', amountMinor: 999 }] },
+    ];
+    const props = {
+      members: group, expenses, baseCurrency: 'JPY' as const, meId: 'ana',
+      payments: [{ id: 'payment', tripId: 'trip-a', payerId: 'ana', receiverId: 'den', amountMinor: 200, currency: 'JPY' }],
+      transfers: [{ id: 'transfer', tripId: 'trip-a', payerId: 'ana', receiverId: 'den',
+        sourceCurrency: 'JPY' as const, sourceAmountMinor: 100, targetCurrency: 'RUB' as const, targetAmountMinor: 6000 }],
+      onMarkSettled: vi.fn(), onUndoPayment: vi.fn(), onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+    };
+    const totals = () => [...container.querySelectorAll('h2')]
+      .find((heading) => heading.textContent === 'Всего потрачено')!.closest('section')!;
+    const amounts = () => [...totals().querySelectorAll('p')].map((p) => p.textContent);
+    await act(async () => root.render(<BalanceTab {...props} />));
+    expect(amounts()).toEqual([formatMinor(12345, 'RUB'), formatMinor(999, 'USD'), formatMinor(2302, 'JPY')]);
+    await click('Только мои');
+    // Pair: 334 + 333 from the shared bill and the full personal 501 JPY.
+    // Paying 800 JPY for Den, repayments and debt transfers are not spending.
+    expect(amounts()).toEqual([formatMinor(12345, 'RUB'), formatMinor(1168, 'JPY')]);
+    await act(async () => root.render(<BalanceTab {...props} meId="ben" />));
+    expect(amounts()).toEqual([formatMinor(12345, 'RUB'), formatMinor(1168, 'JPY')]);
+    await act(async () => root.render(<BalanceTab {...props} meId="den" />));
+    expect(amounts()).toEqual([formatMinor(999, 'USD'), formatMinor(1134, 'JPY')]);
+    await click('Только мои');
+    expect(amounts()).toEqual([formatMinor(12345, 'RUB'), formatMinor(999, 'USD'), formatMinor(2302, 'JPY')]);
+  });
+
+  it('honors the saved spending filter and updates totals when expenses or wallet membership change', async () => {
+    window.localStorage.setItem('tripsplit:mineOnly', '1');
+    const props = {
+      members, expenses: [expense], payments: [], transfers: [], baseCurrency: 'JPY' as const,
+      meId: 'ana', onMarkSettled: vi.fn(), onUndoPayment: vi.fn(),
+      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+    };
+    const total = () => [...container.querySelectorAll('h2')]
+      .find((heading) => heading.textContent === 'Всего потрачено')!.closest('section')!.querySelector('p')!.textContent;
+    await act(async () => root.render(<BalanceTab {...props} />));
+    expect(total()).toBe(formatMinor(500, 'JPY'));
+    const paired = members.map((member) => ({ ...member, unit: 'couple' }));
+    await act(async () => root.render(<BalanceTab {...props} members={paired} />));
+    expect(total()).toBe(formatMinor(1000, 'JPY'));
+    await act(async () => root.render(<BalanceTab {...props} members={paired} expenses={[]} />));
+    expect(total()).toBe('0');
+    await act(async () => root.render(<BalanceTab {...props} members={paired} />));
+    expect(total()).toBe(formatMinor(1000, 'JPY'));
+  });
+
+  it('shows zero for a wallet without shares even when it paid the whole bill', async () => {
+    const props = {
+      members, expenses: [{ ...expense, splits: [{ memberId: 'ben', amountMinor: 1000 }] }],
+      payments: [], transfers: [], baseCurrency: 'JPY' as const,
+      meId: 'ana', onMarkSettled: vi.fn(), onUndoPayment: vi.fn(),
+      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+    };
+    await act(async () => root.render(<BalanceTab {...props} />));
+    await click('Только мои');
+    const summary = [...container.querySelectorAll('h2')]
+      .find((heading) => heading.textContent === 'Всего потрачено')!.closest('section')!;
+    expect([...summary.querySelectorAll('p')].map((p) => p.textContent)).toEqual(['0']);
+    // A persisted filter must not zero the summary if no valid user is selected.
+    await act(async () => root.render(<BalanceTab {...props} meId={null} />));
+    expect(summary.querySelector('p')!.textContent).toBe(formatMinor(1000, 'JPY'));
+    await act(async () => root.render(<BalanceTab {...props} meId="missing" />));
+    expect(summary.querySelector('p')!.textContent).toBe(formatMinor(1000, 'JPY'));
+  });
+
   it('recalculates balances when only debt transfers change, including undo', async () => {
     const props = {
       members, expenses: [expense], payments: [], transfers: [], baseCurrency: 'JPY' as const,
