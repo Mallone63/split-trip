@@ -190,7 +190,7 @@ export default function ExpenseList({
                         <span className="block text-base font-semibold text-slate-900 dark:text-slate-100">
                           {formatMinor(expense.amountMinor, expense.currency)}
                         </span>
-                        {hasMe && (
+                        {hasMe && !paidForOthers && (
                           <span className="block text-xs text-teal-700 dark:text-teal-300">
                             {personal ? 'Личная' : `${shareLabel}: ${formatMinor(share, expense.currency)}`}
                           </span>
