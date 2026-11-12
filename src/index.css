@@ -43,6 +43,17 @@ body {
   bottom: calc(env(safe-area-inset-bottom, 0px) + 4.5rem);
 }
 
+/* Keep the production date-strip height (16px line + 8px vertical padding).
+   Container-relative type fits a date and two six-digit totals on narrow phones,
+   including currency decimals, without wrapping or truncating money amounts. */
+.expense-day {
+  container-type: inline-size;
+}
+
+.expense-day-heading {
+  font-size: clamp(9px, 3.05cqi, 12px);
+}
+
 /* Fixed sheets do not inherit the shell's padding. Keep their actions above
    the home indicator, and scroll tall sheets within the safe viewport. */
 .safe-sheet-overlay {

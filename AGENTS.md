@@ -29,7 +29,8 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
   Keep these functions pure and covered by tests in `src/lib/__tests__/`.
 - `src/lib/api.ts` — all Supabase access + trip-link / "me" localStorage persistence
   (keys `tripsplit:lastTrip`, `tripsplit:me:<tripId>`).
-- `src/lib/prefs.ts` — small localStorage UI prefs (`tripsplit:mineOnly`); `errors.ts`
+- `src/lib/prefs.ts` — small localStorage UI prefs (`tripsplit:mineOnly`,
+  `tripsplit:expenseFilter`); `errors.ts`
   turns thrown values into user-facing Russian messages (`TripNotFoundError`).
 - `src/lib/tripCache.ts`, `tripLoader.ts`, `useTripLoader.ts` — validated local
   snapshots, cancellable/timeout-bounded loads, and React lifecycle integration.
@@ -119,6 +120,15 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
   `localStorage` (`tripsplit:lastTrip`) is only a fallback for ordinary visits.
 - Shared wallets: `members.unit` groups people (e.g. a couple). Splits stay
   per-person; balances/settlements aggregate per wallet via `aggregateByUnit`.
+- Expense list filters: «Все / С нами / Личные» (solo: «Со мной»). Involvement
+  means a positive share or an actual payment, including secondary payers.
+  Personal means all positive shares AND payers are inside the current wallet;
+  zero-share/zero-payment placeholders do not count as outside participants.
+  No identity: show all and hide wallet-specific controls, never guess.
+  The expense filter migrates the old `mineOnly` value once, then persists
+  independently of the balances filter. Daily headers sum only visible expenses
+  in the trip currency using stored base totals and frozen per-split conversions
+  for the wallet share. Keep date + Σ + share in one slim, normal-weight muted row.
 - Settling up: recorded in the `payments` table (never by deleting/editing
   expenses — history is immutable). Debts are tracked **per currency ledger**:
   a ledger = expenses of that currency + payments of the same currency
