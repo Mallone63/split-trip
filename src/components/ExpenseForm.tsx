@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { NewExpenseInput } from '../lib/api';
 import {
   CURRENCIES,
   CURRENCY_CODES,
   formatMinor,
+  fromMinor,
   parseAmount,
   toMinor,
   type CurrencyCode,
@@ -20,11 +21,14 @@ import type { Member } from '../lib/types';
 interface Props {
   members: Member[];
   baseCurrency: CurrencyCode;
+  meId: string | null;
+  onSetMe: (memberId: string) => void;
   onSubmit: (input: NewExpenseInput) => Promise<void>;
   onCancel: () => void;
 }
 
 type SplitMode = 'equal' | 'custom';
+type ExpenseKind = 'shared' | 'personal';
 type RateStatus = 'loading' | 'ready' | 'unavailable';
 
 /** Parsed per-member inputs (bill shares / handed-over amounts), in member order. */
@@ -44,10 +48,14 @@ function collectEntries(
 export default function ExpenseForm({
   members,
   baseCurrency,
+  meId,
+  onSetMe,
   onSubmit,
   onCancel,
 }: Props) {
   const [title, setTitle] = useState('');
+  const [kind, setKind] = useState<ExpenseKind>('shared');
+  const [personalAmount, setPersonalAmount] = useState('');
   const [currency, setCurrency] = useState<CurrencyCode>(baseCurrency);
   const [spentAt, setSpentAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [mode, setMode] = useState<SplitMode>('equal');
@@ -60,6 +68,20 @@ export default function ExpenseForm({
   const [error, setError] = useState<string | null>(null);
 
   const memberOrder = useMemo(() => members.map((m) => m.id), [members]);
+  const me = members.find((member) => member.id === meId);
+  const personalMembers = members.filter(
+    (member) => me && (member.id === me.id || (me.unit != null && member.unit === me.unit)),
+  );
+  const parsedPersonalAmount = toMinor(parseAmount(personalAmount), currency);
+  // Personal expenses use the existing split model: only my wallet participates,
+  // and I pay the whole amount. Wallet aggregation therefore leaves debts unchanged.
+  const personalSplit = me && Number.isSafeInteger(parsedPersonalAmount) && parsedPersonalAmount > 0
+    ? materializePaidSplit(
+        [{ memberId: me.id, amountMinor: parsedPersonalAmount }],
+        personalMembers.map((member) => member.id),
+        memberOrder,
+      )
+    : null;
 
   useEffect(() => {
     let active = true;
@@ -121,13 +143,32 @@ export default function ExpenseForm({
 
   const paidTotal = paidEntries.reduce((sum, entry) => sum + entry.amountMinor, 0);
   const shareTotal = shareEntries.reduce((sum, entry) => sum + entry.amountMinor, 0);
-  // In both modes the total is derived: from the payments («Поровну») or the
-  // bill shares («Разделить счёт»).
-  const amountMinor = mode === 'equal' ? paidTotal : shareTotal;
+  // Shared totals come from payments («Поровну») or bill shares («Разделить счёт»).
+  // The personal amount is entered directly and never uses hidden shared payments.
+  const sharedAmountMinor = mode === 'equal' ? paidTotal : shareTotal;
+  const amountMinor = kind === 'personal' ? parsedPersonalAmount : sharedAmountMinor;
   const paidMismatch = mode === 'custom' && shareTotal > 0 && paidTotal !== shareTotal;
-  const splitValid = (mode === 'equal' ? paidSplit : customSplit) !== null;
+  const resolved = kind === 'personal' ? personalSplit : mode === 'equal' ? paidSplit : customSplit;
+  const splitValid = resolved !== null;
   const canSave =
     title.trim().length > 0 && amountMinor > 0 && rateValid && splitValid && !submitting;
+
+  function changeKind(next: ExpenseKind) {
+    if (next === 'personal' && !personalAmount && sharedAmountMinor > 0) {
+      setPersonalAmount(String(fromMinor(sharedAmountMinor, currency)));
+    }
+    setKind(next);
+    setError(null);
+  }
+
+  function handleKindKey(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 'shared' : event.key === 'End' ? 'personal'
+      : kind === 'shared' ? 'personal' : 'shared';
+    changeKind(next);
+    document.getElementById(`expense-kind-${next}`)?.focus();
+  }
 
   function toggleMember(memberId: string) {
     const wasSelected = selected.has(memberId);
@@ -155,7 +196,6 @@ export default function ExpenseForm({
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    const resolved = mode === 'equal' ? paidSplit : customSplit;
     if (!canSave || !rateValid || !resolved) return;
     setSubmitting(true);
     setError(null);
@@ -199,191 +239,166 @@ export default function ExpenseForm({
         </button>
       </div>
 
-      <div className="space-y-4 rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
-        <label className="block">
-          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">За что?</span>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Ужин в раменной"
-            className={inputClass}
-          />
-        </label>
-
-        <div className="flex gap-2">
-          <div className="block min-w-0 flex-1">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Сумма</span>
-            <div className={`${inputClass} bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400`}>
-              {amountMinor > 0
-                ? formatMinor(amountMinor, currency)
-                : mode === 'equal'
-                  ? 'из оплат ниже'
-                  : 'из долей ниже'}
-            </div>
-          </div>
-          <label className="block w-32 shrink-0">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Валюта</span>
-            <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
-              className={`${inputClass} bg-white dark:bg-slate-900`}
-            >
-              {CURRENCY_CODES.map((code) => (
-                <option key={code} value={code}>
-                  {code} {CURRENCIES[code].symbol}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="flex gap-2">
-          <label className="block min-w-0 flex-1">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Дата</span>
-            <input
-              type="date"
-              value={spentAt}
-              onChange={(e) => setSpentAt(e.target.value)}
-              className={inputClass}
-            />
-          </label>
-        </div>
-
-        {currency !== baseCurrency && (
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Курс к {baseCurrency}</span>
-            <input
-              value={rateStr}
-              onChange={(e) => setRateStr(e.target.value)}
-              inputMode="decimal"
-              placeholder={`1 ${currency} = ? ${baseCurrency}`}
-              className={inputClass}
-            />
-            <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
-              {rateStatus === 'loading' && 'Получаем сегодняшний курс…'}
-              {rateStatus === 'ready' &&
-                `Рыночный курс: 1 ${currency} = ${rateStr} ${baseCurrency}. Если карта платит по другому курсу — введите фактический.`}
-              {rateStatus === 'unavailable' && 'Нет сети — введите курс вручную.'}
-            </span>
-          </label>
-        )}
+      <div role="tablist" aria-label="Тип траты" className="flex rounded-lg bg-slate-100 dark:bg-slate-800 p-1 text-sm font-medium">
+        {(['shared', 'personal'] as const).map((option) => (
+          <button
+            key={option}
+            id={`expense-kind-${option}`}
+            type="button"
+            role="tab"
+            aria-selected={kind === option}
+            aria-controls="expense-kind-panel"
+            tabIndex={kind === option ? 0 : -1}
+            disabled={submitting}
+            onClick={() => changeKind(option)}
+            onKeyDown={handleKindKey}
+            className={`flex-1 rounded-md py-2 focus-visible:outline-2 focus-visible:outline-teal-500 dark:focus-visible:outline-teal-400 ${
+              kind === option ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            {option === 'shared' ? 'Общая трата' : 'Личная'}
+          </button>
+        ))}
       </div>
 
-      <div className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
-        <div className="mb-3 flex rounded-lg bg-slate-100 dark:bg-slate-800 p-1 text-sm font-medium">
-          {(['equal', 'custom'] as SplitMode[]).map((modeOption) => (
-            <button
-              key={modeOption}
-              type="button"
-              onClick={() => setMode(modeOption)}
-              className={`flex-1 rounded-md py-1.5 ${
-                mode === modeOption ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {modeOption === 'equal' ? 'Поровну' : 'Разделить счёт'}
-            </button>
-          ))}
+      <div id="expense-kind-panel" role="tabpanel" aria-labelledby={`expense-kind-${kind}`} className="space-y-4">
+        <div className="space-y-4 rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
+          {kind === 'personal' && (
+            me ? (
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Расход: <span className="font-medium text-teal-700 dark:text-teal-300">{personalMembers.map((member) => member.name).join(' + ')}</span>
+              </p>
+            ) : (
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Кто вы?</span>
+                <select value="" onChange={(event) => onSetMe(event.target.value)} className={`${inputClass} bg-white dark:bg-slate-900`}>
+                  <option value="" disabled>Выберите себя</option>
+                  {members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+                </select>
+              </label>
+            )
+          )}
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">За что?</span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ужин в раменной"
+              className={inputClass}
+            />
+          </label>
+
+          <div className="flex gap-2">
+            {kind === 'personal' ? (
+              <label className="block min-w-0 flex-1">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Сумма</span>
+                <input
+                  value={personalAmount}
+                  onChange={(event) => setPersonalAmount(event.target.value)}
+                  inputMode="decimal"
+                  placeholder="0"
+                  className={inputClass}
+                />
+              </label>
+            ) : <div className="block min-w-0 flex-1">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Сумма</span>
+              <div className={`${inputClass} bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400`}>
+                {amountMinor > 0
+                  ? formatMinor(amountMinor, currency)
+                  : mode === 'equal'
+                    ? 'из оплат ниже'
+                    : 'из долей ниже'}
+              </div>
+            </div>}
+            <label className="block w-32 shrink-0">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Валюта</span>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+                className={`${inputClass} bg-white dark:bg-slate-900`}
+              >
+                {CURRENCY_CODES.map((code) => (
+                  <option key={code} value={code}>
+                    {code} {CURRENCIES[code].symbol}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="flex gap-2">
+            <label className="block min-w-0 flex-1">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Дата</span>
+              <input
+                type="date"
+                value={spentAt}
+                onChange={(e) => setSpentAt(e.target.value)}
+                className={inputClass}
+              />
+            </label>
+          </div>
+
+          {currency !== baseCurrency && (
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Курс к {baseCurrency}</span>
+              <input
+                value={rateStr}
+                onChange={(e) => setRateStr(e.target.value)}
+                inputMode="decimal"
+                placeholder={`1 ${currency} = ? ${baseCurrency}`}
+                className={inputClass}
+              />
+              <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                {rateStatus === 'loading' && 'Получаем сегодняшний курс…'}
+                {rateStatus === 'ready' &&
+                  `Рыночный курс: 1 ${currency} = ${rateStr} ${baseCurrency}. Если карта платит по другому курсу — введите фактический.`}
+                {rateStatus === 'unavailable' && 'Нет сети — введите курс вручную.'}
+              </span>
+            </label>
+          )}
         </div>
 
-        {mode === 'equal' && (
-          <div className="space-y-1">
-            {members.map((member) => {
-              const isSelected = selected.has(member.id);
-              const share = paidSplit?.splits.find((s) => s.memberId === member.id)?.amountMinor ?? 0;
-              const paid = paidEntries.find((entry) => entry.memberId === member.id)?.amountMinor ?? 0;
-              return (
-                <div
-                  key={member.id}
-                  className={`rounded-lg border px-3 py-2 ${
-                    isSelected
-                      ? 'border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30'
-                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 opacity-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleMember(member.id)}
-                      className="min-w-0 flex-1 text-left text-sm text-slate-800 dark:text-slate-200"
-                    >
-                      {member.name}
-                      {member.id === paidSplit?.primaryPayerId ? ' (плательщик)' : ''}
-                    </button>
-                    {isSelected && (
-                      <input
-                        value={paidAmounts[member.id] ?? ''}
-                        onChange={(e) =>
-                          setPaidAmounts((prev) => ({ ...prev, [member.id]: e.target.value }))
-                        }
-                        inputMode="decimal"
-                        placeholder="0"
-                        aria-label={`Заплатил(а): ${member.name}`}
-                        className="w-28 shrink-0 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-right text-base focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
-                      />
-                    )}
-                  </div>
-                  <div className="mt-1 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                    <span>{paid > 0 ? `заплатил(а) ${formatMinor(paid, currency)}` : 'не платил(а)'}</span>
-                    <span>доля {isSelected && amountMinor > 0 ? formatMinor(share, currency) : '—'}</span>
-                  </div>
-                </div>
-              );
-            })}
-            <p
-              className={`text-right text-xs font-medium ${
-                amountMinor > 0
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-slate-400 dark:text-slate-500'
-              }`}
-            >
-              {amountMinor > 0
-                ? `Итого ${formatMinor(amountMinor, currency)} на ${selected.size} чел. — делится поровну`
-                : 'Отметьте участников и введите, кто сколько заплатил'}
-            </p>
+        {kind === 'shared' && <div className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
+          <div className="mb-3 flex rounded-lg bg-slate-100 dark:bg-slate-800 p-1 text-sm font-medium">
+            {(['equal', 'custom'] as SplitMode[]).map((modeOption) => (
+              <button
+                key={modeOption}
+                type="button"
+                onClick={() => setMode(modeOption)}
+                className={`flex-1 rounded-md py-1.5 ${
+                  mode === modeOption ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow' : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                {modeOption === 'equal' ? 'Поровну' : 'Разделить счёт'}
+              </button>
+            ))}
           </div>
-        )}
 
-        {mode === 'custom' && (
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 px-3 text-xs text-slate-400 dark:text-slate-500">
-              <span className="min-w-0 flex-1">Участник</span>
-              <span className="w-20 shrink-0 text-right">Доля</span>
-              <span className="w-20 shrink-0 text-right">Внёс</span>
-            </div>
-            {members.map((member) => {
-              const isSelected = selected.has(member.id);
-              const share = shareEntries.find((entry) => entry.memberId === member.id)?.amountMinor ?? 0;
-              const paid = paidEntries.find((entry) => entry.memberId === member.id)?.amountMinor ?? 0;
-              return (
-                <div
-                  key={member.id}
-                  className={`rounded-lg border px-3 py-2 ${
-                    isSelected
-                      ? 'border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30'
-                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 opacity-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleMember(member.id)}
-                      className="min-w-0 flex-1 text-left text-sm text-slate-800 dark:text-slate-200"
-                    >
-                      {member.name}
-                      {member.id === customSplit?.primaryPayerId ? ' (плательщик)' : ''}
-                    </button>
-                    {isSelected && (
-                      <>
-                        <input
-                          value={shareAmounts[member.id] ?? ''}
-                          onChange={(e) =>
-                            setShareAmounts((prev) => ({ ...prev, [member.id]: e.target.value }))
-                          }
-                          inputMode="decimal"
-                          placeholder="0"
-                          aria-label={`Доля счёта: ${member.name}`}
-                          className={cellInputClass}
-                        />
+          {mode === 'equal' && (
+            <div className="space-y-1">
+              {members.map((member) => {
+                const isSelected = selected.has(member.id);
+                const share = paidSplit?.splits.find((s) => s.memberId === member.id)?.amountMinor ?? 0;
+                const paid = paidEntries.find((entry) => entry.memberId === member.id)?.amountMinor ?? 0;
+                return (
+                  <div
+                    key={member.id}
+                    className={`rounded-lg border px-3 py-2 ${
+                      isSelected
+                        ? 'border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 opacity-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleMember(member.id)}
+                        className="min-w-0 flex-1 text-left text-sm text-slate-800 dark:text-slate-200"
+                      >
+                        {member.name}
+                        {member.id === paidSplit?.primaryPayerId ? ' (плательщик)' : ''}
+                      </button>
+                      {isSelected && (
                         <input
                           value={paidAmounts[member.id] ?? ''}
                           onChange={(e) =>
@@ -392,35 +407,110 @@ export default function ExpenseForm({
                           inputMode="decimal"
                           placeholder="0"
                           aria-label={`Заплатил(а): ${member.name}`}
-                          className={cellInputClass}
+                          className="w-28 shrink-0 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-right text-base focus:border-teal-500 dark:focus:border-teal-400 focus:outline-none"
                         />
-                      </>
-                    )}
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                      <span>{paid > 0 ? `заплатил(а) ${formatMinor(paid, currency)}` : 'не платил(а)'}</span>
+                      <span>доля {isSelected && amountMinor > 0 ? formatMinor(share, currency) : '—'}</span>
+                    </div>
                   </div>
-                  <div className="mt-1 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                    <span>{share > 0 ? `доля ${formatMinor(share, currency)}` : 'без доли'}</span>
-                    <span>{paid > 0 ? `заплатил(а) ${formatMinor(paid, currency)}` : 'не платил(а)'}</span>
-                  </div>
-                </div>
-              );
-            })}
-            <p
-              className={`text-right text-xs font-medium ${
-                paidMismatch
-                  ? 'text-red-600 dark:text-red-400'
-                  : amountMinor > 0
+                );
+              })}
+              <p
+                className={`text-right text-xs font-medium ${
+                  amountMinor > 0
                     ? 'text-emerald-600 dark:text-emerald-400'
                     : 'text-slate-400 dark:text-slate-500'
-              }`}
-            >
-              {paidMismatch
-                ? `Внесено ${formatMinor(paidTotal, currency)} из ${formatMinor(shareTotal, currency)} — суммы должны совпадать`
-                : amountMinor > 0
-                  ? `Счёт ${formatMinor(amountMinor, currency)} на ${selected.size} чел.`
-                  : 'Отметьте участников и заполните доли счёта'}
-            </p>
-          </div>
-        )}
+                }`}
+              >
+                {amountMinor > 0
+                  ? `Итого ${formatMinor(amountMinor, currency)} на ${selected.size} чел. — делится поровну`
+                  : 'Отметьте участников и введите, кто сколько заплатил'}
+              </p>
+            </div>
+          )}
+
+          {mode === 'custom' && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 px-3 text-xs text-slate-400 dark:text-slate-500">
+                <span className="min-w-0 flex-1">Участник</span>
+                <span className="w-20 shrink-0 text-right">Доля</span>
+                <span className="w-20 shrink-0 text-right">Внёс</span>
+              </div>
+              {members.map((member) => {
+                const isSelected = selected.has(member.id);
+                const share = shareEntries.find((entry) => entry.memberId === member.id)?.amountMinor ?? 0;
+                const paid = paidEntries.find((entry) => entry.memberId === member.id)?.amountMinor ?? 0;
+                return (
+                  <div
+                    key={member.id}
+                    className={`rounded-lg border px-3 py-2 ${
+                      isSelected
+                        ? 'border-teal-300 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/30'
+                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 opacity-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleMember(member.id)}
+                        className="min-w-0 flex-1 text-left text-sm text-slate-800 dark:text-slate-200"
+                      >
+                        {member.name}
+                        {member.id === customSplit?.primaryPayerId ? ' (плательщик)' : ''}
+                      </button>
+                      {isSelected && (
+                        <>
+                          <input
+                            value={shareAmounts[member.id] ?? ''}
+                            onChange={(e) =>
+                              setShareAmounts((prev) => ({ ...prev, [member.id]: e.target.value }))
+                            }
+                            inputMode="decimal"
+                            placeholder="0"
+                            aria-label={`Доля счёта: ${member.name}`}
+                            className={cellInputClass}
+                          />
+                          <input
+                            value={paidAmounts[member.id] ?? ''}
+                            onChange={(e) =>
+                              setPaidAmounts((prev) => ({ ...prev, [member.id]: e.target.value }))
+                            }
+                            inputMode="decimal"
+                            placeholder="0"
+                            aria-label={`Заплатил(а): ${member.name}`}
+                            className={cellInputClass}
+                          />
+                        </>
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                      <span>{share > 0 ? `доля ${formatMinor(share, currency)}` : 'без доли'}</span>
+                      <span>{paid > 0 ? `заплатил(а) ${formatMinor(paid, currency)}` : 'не платил(а)'}</span>
+                    </div>
+                  </div>
+                );
+              })}
+              <p
+                className={`text-right text-xs font-medium ${
+                  paidMismatch
+                    ? 'text-red-600 dark:text-red-400'
+                    : amountMinor > 0
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-slate-400 dark:text-slate-500'
+                }`}
+              >
+                {paidMismatch
+                  ? `Внесено ${formatMinor(paidTotal, currency)} из ${formatMinor(shareTotal, currency)} — суммы должны совпадать`
+                  : amountMinor > 0
+                    ? `Счёт ${formatMinor(amountMinor, currency)} на ${selected.size} чел.`
+                    : 'Отметьте участников и заполните доли счёта'}
+              </p>
+            </div>
+          )}
+        </div>}
       </div>
 
       {error && <p className="rounded-lg bg-red-50 dark:bg-red-950/40 p-3 text-sm text-red-700 dark:text-red-300">{error}</p>}

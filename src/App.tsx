@@ -288,6 +288,8 @@ export default function App() {
             <ExpenseForm
               members={bundle.members}
               baseCurrency={bundle.trip.baseCurrency}
+              meId={meId}
+              onSetMe={handleSetMe}
               onSubmit={handleAddExpense}
               onCancel={() => setAddingExpense(false)}
             />
