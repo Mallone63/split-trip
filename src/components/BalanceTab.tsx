@@ -23,7 +23,6 @@ type Wallets = ReturnType<typeof aggregateByUnit>;
 
 interface Ledger {
   currency: CurrencyCode;
-  totalMinor: number;
   wallets: Wallets;
   settlements: Settlement[];
 }
@@ -92,7 +91,6 @@ export default function BalanceTab({
         );
         return {
           currency,
-          totalMinor: ledgerExpenses.reduce((sum, expense) => sum + expense.amountMinor, 0),
           wallets,
           settlements,
         };
@@ -133,6 +131,25 @@ export default function BalanceTab({
   const myMemberIds = useMemo(
     () => new Set(myWallets.flatMap((w) => w.memberIds)),
     [myWallets],
+  );
+
+  // Spending is what my wallet consumed (its bill shares), not what it paid.
+  // Keep debt ledgers unfiltered: settlements still need the whole group's data.
+  const spendingTotals = useMemo(
+    () => CURRENCY_CODES.map((currency) => ({
+      currency,
+      totalMinor: expenses.reduce((total, expense) => {
+        if (expense.currency !== currency) return total;
+        const amount = mineOnly && myMemberIds.size > 0
+          ? expense.splits.reduce(
+              (sum, split) => sum + (myMemberIds.has(split.memberId) ? split.amountMinor : 0),
+              0,
+            )
+          : expense.amountMinor;
+        return total + amount;
+      }, 0),
+    })),
+    [expenses, mineOnly, myMemberIds],
   );
 
   const settlementInvolvesMe = (ledger: Ledger, settlement: Settlement): boolean => {
@@ -344,11 +361,11 @@ export default function BalanceTab({
             Всего потрачено
           </h2>
           <div className="space-y-0.5 text-right">
-            {ledgers.some((ledger) => ledger.totalMinor !== 0) ? (
-              ledgers.map((ledger) =>
-                ledger.totalMinor === 0 ? null : (
-                  <p key={ledger.currency} className="text-base font-bold text-slate-900 dark:text-slate-100">
-                    {formatMinor(ledger.totalMinor, ledger.currency)}
+            {spendingTotals.some((total) => total.totalMinor !== 0) ? (
+              spendingTotals.map((total) =>
+                total.totalMinor === 0 ? null : (
+                  <p key={total.currency} className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    {formatMinor(total.totalMinor, total.currency)}
                   </p>
                 ),
               )
