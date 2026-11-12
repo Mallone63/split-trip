@@ -231,8 +231,8 @@ describe('personal expense entry', () => {
     const before = aggregateByUnit(group, computeBalances(group, [existing], 'JPY'));
     const after = aggregateByUnit(group, computeBalances(group, [existing, saved], 'JPY'));
     expect(after).toEqual(before);
-    // Both partners see the personal expense through the existing wallet-aware filter.
-    await click('Только мои');
+    // Both partners see the personal expense through the wallet-aware filter.
+    await click(coupled ? 'С нами' : 'Со мной');
     expect(container.textContent).toContain('Кофе');
     await click('+ Добавить');
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Общая трата');
@@ -518,9 +518,10 @@ describe('trip regression audit', () => {
     await render();
     expect(container.textContent).toContain('Только мои');
     await chooseTab(1);
-    expect(container.textContent).toContain('Только мои');
+    await click('Со мной');
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toBe('Со мной');
     await act(async () => window.dispatchEvent(new Event('online')));
-    expect(container.textContent).toContain('Только мои');
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toBe('Со мной');
     expect(window.localStorage.getItem('tripsplit:me:trip-a')).toBe('ana');
   });
 
