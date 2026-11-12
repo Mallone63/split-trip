@@ -113,7 +113,7 @@ export default function BalanceTab({
   const paymentCcy = (payment: Payment): CurrencyCode =>
     payment.currency && isCurrencyCode(payment.currency) ? payment.currency : baseCurrency;
 
-  // "Только мои" filter: show balances/settlements/payments involving me only.
+  // Wallet filter: show balances/settlements/payments involving me only.
   const [mineOnly, setMineOnly] = useState(readMineOnlyPref);
   useEffect(() => {
     writeMineOnlyPref(mineOnly);
@@ -356,17 +356,25 @@ export default function BalanceTab({
   return (
     <div className="space-y-4">
       {meId && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400 dark:text-slate-500">Фильтр:</span>
-          <button
-            type="button"
-            onClick={() => setMineOnly((value) => !value)}
-            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-              mineOnly ? 'bg-teal-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 shadow-sm'
-            }`}
-          >
-            Только мои
-          </button>
+        <div role="group" aria-label="Фильтр балансов" className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
+          {[
+            { value: false, label: 'Все' },
+            { value: true, label: myMemberIds.size > 1 ? 'Наши' : 'Мои' },
+          ].map((option) => (
+            <button
+              key={String(option.value)}
+              type="button"
+              aria-pressed={mineOnly === option.value}
+              onClick={() => setMineOnly(option.value)}
+              className={`min-h-10 min-w-0 flex-1 rounded-lg px-2 py-2 text-sm transition-colors ${
+                mineOnly === option.value
+                  ? 'bg-teal-600 text-white'
+                  : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       )}
 

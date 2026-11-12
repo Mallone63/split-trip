@@ -336,13 +336,13 @@ describe('trip regression audit', () => {
       .find((heading) => heading.textContent === 'Всего потрачено')!.nextElementSibling!;
     await act(async () => root.render(<BalanceTab {...props} />));
     expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(1129, 'JPY')}`);
-    await click('Только мои');
+    await click('Наши');
     expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(825, 'JPY')}`);
     await act(async () => root.render(<BalanceTab {...props} meId="ben" />));
     expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(825, 'JPY')}`);
     await act(async () => root.render(<BalanceTab {...props} meId="den" />));
     expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(304, 'JPY')}`);
-    await click('Только мои');
+    await click('Все');
     expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(1129, 'JPY')}`);
     await act(async () => root.render(<BalanceTab {...props} expenses={[]} />));
     expect(combinedTotal().textContent).toBe(`Σ: ${formatMinor(0, 'JPY')}`);
@@ -362,7 +362,7 @@ describe('trip regression audit', () => {
       .find((heading) => heading.textContent === 'Всего потрачено')!.nextElementSibling!.textContent;
     await act(async () => root.render(<BalanceTab {...props} />));
     expect(combinedText()).toBe(`Σ: ${formatMinor(300, 'USD')}`);
-    await click('Только мои');
+    await click('Все');
     expect(combinedText()).toBe(`Σ: ${formatMinor(601, 'USD')}`);
   });
 
@@ -402,7 +402,12 @@ describe('trip regression audit', () => {
     const amounts = () => [...totals().querySelectorAll('[aria-label="Расходы по валютам"] p')].map((p) => p.textContent);
     await act(async () => root.render(<BalanceTab {...props} />));
     expect(amounts()).toEqual([formatMinor(12345, 'RUB'), formatMinor(999, 'USD'), formatMinor(2302, 'JPY')]);
-    await click('Только мои');
+    expect([...container.querySelectorAll('[aria-label="Фильтр балансов"] button')].map((button) => button.textContent))
+      .toEqual(['Все', 'Наши']);
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toBe('Все');
+    await click('Наши');
+    await click('Наши'); // Selecting an active segment must not toggle it off.
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toBe('Наши');
     // Pair: 334 + 333 from the shared bill and the full personal 501 JPY.
     // Paying 800 JPY for Den, repayments and debt transfers are not spending.
     expect(amounts()).toEqual([formatMinor(12345, 'RUB'), formatMinor(1168, 'JPY')]);
@@ -410,7 +415,8 @@ describe('trip regression audit', () => {
     expect(amounts()).toEqual([formatMinor(12345, 'RUB'), formatMinor(1168, 'JPY')]);
     await act(async () => root.render(<BalanceTab {...props} meId="den" />));
     expect(amounts()).toEqual([formatMinor(999, 'USD'), formatMinor(1134, 'JPY')]);
-    await click('Только мои');
+    expect(container.querySelector('[aria-pressed="true"]')?.textContent).toBe('Мои');
+    await click('Все');
     expect(amounts()).toEqual([formatMinor(12345, 'RUB'), formatMinor(999, 'USD'), formatMinor(2302, 'JPY')]);
   });
 
@@ -442,7 +448,7 @@ describe('trip regression audit', () => {
       onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
     };
     await act(async () => root.render(<BalanceTab {...props} />));
-    await click('Только мои');
+    await click('Мои');
     const summary = [...container.querySelectorAll('h2')]
       .find((heading) => heading.textContent === 'Всего потрачено')!.closest('section')!;
     expect([...summary.querySelectorAll('[aria-label="Расходы по валютам"] p')].map((p) => p.textContent)).toEqual(['0']);
@@ -516,7 +522,7 @@ describe('trip regression audit', () => {
     window.localStorage.setItem('tripsplit:me:trip-a', 'ana');
     load.mockResolvedValue(saved);
     await render();
-    expect(container.textContent).toContain('Только мои');
+    expect(container.querySelector('[aria-label="Фильтр балансов"]')?.textContent).toBe('ВсеМои');
     await chooseTab(1);
     await click('Со мной');
     expect(container.querySelector('[aria-pressed="true"]')?.textContent).toBe('Со мной');

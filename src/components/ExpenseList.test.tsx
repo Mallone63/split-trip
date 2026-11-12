@@ -71,8 +71,9 @@ describe('expense filters and daily summaries', () => {
     expect(row('Общий ужин').textContent).toContain(`Наша доля: ${money(2000)}`);
     expect(row('Кофе пары').textContent).toContain('Личная');
     expect(row('Кофе пары').textContent).not.toContain('Наша доля');
-    expect(row('Билет Дена').textContent).toContain(`Наша доля: ${money(0)}`);
+    expect(row('Билет Дена').textContent).not.toContain('Наша доля');
     expect(row('Билет Дена').textContent).toContain('Оплачено за другого');
+    expect(row('Покупка Дена').textContent).toContain(`Наша доля: ${money(0)}`);
     await click('С нами');
     expect(container.textContent).not.toContain('Покупка Дена');
     expect(summary()).toContain(`Σ ${money(4900)}`);
