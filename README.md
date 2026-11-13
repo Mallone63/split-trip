@@ -102,6 +102,11 @@ works at a custom domain or any other static host.
 
 Optional REST API and MCP integration: see [`server/README.md`](server/README.md).
 It runs separately from the static site and reuses the existing money calculations.
+The connected production MCP is hosted on **ChatGPT Sites**, at
+[split-trip-mcp.candyhedgehog1.chatgpt.site](https://split-trip-mcp.candyhedgehog1.chatgpt.site).
+It has a separate source/deployment workflow; pushing this repository does not
+publish the MCP changes. Exact Site identity and update steps are recorded in
+[`server/README.md`](server/README.md#production-chatgpt-sites).
 
 ```
 .github/workflows/  deploy.yml — build & publish to GitHub Pages
