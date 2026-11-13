@@ -5,6 +5,37 @@ An optional Node 22+ process, separate from the static PWA. It uses the existing
 Both REST and MCP call the same service and are scoped to one configured trip.
 No editing, deletion, settlement or wallet tools are exposed.
 
+## Production: ChatGPT Sites
+
+The connected production **Split Trip** plugin is hosted on **ChatGPT Sites**.
+This was verified on 2026-11-13; the Node process described below is an alternative
+runtime, not the currently deployed hosting arrangement.
+
+| Setting | Value |
+| --- | --- |
+| Site | https://split-trip-mcp.candyhedgehog1.chatgpt.site |
+| Project ID | `appgprj_6af15385ba5481919d6b6007228d64f1` |
+| MCP endpoint | `https://split-trip-mcp.candyhedgehog1.chatgpt.site/mcp` |
+| Plugin ID | `plugin_asdk_app_sites_fab813e503e881918706887edc3f9485` |
+| Audience | Owner-private; preserve it when updating |
+| Runtime | Cloudflare Worker, `worker/index.ts` in the Site's source repository |
+
+The Site source is a separate Sites-managed Git repository. Resolve it using
+`get_site` and `create_source_repository_write_credential` for the project ID
+above; never create another Site for an update. Its `server/service.ts` and money
+helpers come from this repository; `worker/index.ts` supplies Sites authentication,
+MCP discovery, tool schemas/descriptions and REST routing. `server/mcp.ts` and
+`server/http.ts` are Node transports, not the production Worker entry point.
+
+To ship MCP changes, synchronize the affected service/helpers and the Worker's
+tool definitions/instructions, run the Site's tests/build, then publish that
+Site's committed source through Sites. Republishing refreshes the connected
+plugin's tools. Verify with a read-only call. GitHub merges and Pages deployment
+alone do not update the MCP. There is no separate VPS restart to request.
+
+Production variables `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `TRIP_ID` are managed
+in Sites runtime configuration. Keep values and credentials out of source/docs.
+
 ## Run
 
 From the repository root:
@@ -164,8 +195,9 @@ front of this endpoint; the static token is not a drop-in OAuth credential.
 Dictation can supply text commands; live voice mode tool availability depends
 on the client. Deploying the process does not automatically connect it to a chat.
 
-After updating this code, redeploy/restart the separate Node server. Publishing
-GitHub Pages alone does not update MCP. Refresh the MCP client's tool definitions
+For the connected production plugin, use the Sites update flow above. For a
+separately self-hosted Node server, redeploy/restart that process. Publishing
+GitHub Pages alone does not update either MCP. Refresh the client's tool definitions
 so `add_expense` exposes `kind`, `memberId` and `amountMinor`; a cached shared-only
 schema cannot call the new personal mode. If a gateway or plugin keeps its own
 static tool schema, update that schema to match this server as well.

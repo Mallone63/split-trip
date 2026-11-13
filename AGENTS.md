@@ -6,6 +6,20 @@ Trip Split — a single-purpose PWA for splitting group trip expenses (RUB / USD
 No accounts by design: the trip invite link is the access control. One trip per
 deployment, hosted on GitHub Pages via `.github/workflows/deploy.yml`.
 
+## Production MCP hosting
+
+- The connected **Split Trip MCP runs on ChatGPT Sites**, not on a VPS or the
+  GitHub Pages deployment. Site: https://split-trip-mcp.candyhedgehog1.chatgpt.site
+- Site project ID: `appgprj_6af15385ba5481919d6b6007228d64f1`.
+  MCP endpoint: `https://split-trip-mcp.candyhedgehog1.chatgpt.site/mcp`.
+- Sites has its own source repository and Cloudflare Worker adapter. `server/`
+  in this GitHub repository supplies the shared service/reference Node transport;
+  merging it alone does **not** update the connected plugin. See
+  [server/README.md](server/README.md#production-chatgpt-sites) for the update flow.
+- Keep the existing Site owner-private. Runtime configuration stays in Sites;
+  do not commit tokens, Supabase keys or trip data. Routine checks must use
+  mocked data; never add test expenses to the real trip.
+
 ## Stack
 
 - React 19 + TypeScript + Vite 6 + Tailwind CSS v4 (`@tailwindcss/vite` plugin)

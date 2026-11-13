@@ -172,7 +172,7 @@ describe('expense filters and daily summaries', () => {
     await click('+ Добавить');
     expect(onAdd).toHaveBeenCalledOnce();
     await act(async () => row('Общий ужин').querySelector('button')!.click());
-    expect(row('Общий ужин').querySelectorAll('li')).toHaveLength(3);
+    expect(row('Общий ужин').querySelectorAll('tbody tr')).toHaveLength(3);
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     await click('Удалить расход');
     expect(onDelete).toHaveBeenCalledWith('shared');

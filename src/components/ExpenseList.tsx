@@ -213,24 +213,34 @@ export default function ExpenseList({
                             1 {expense.currency} = {formatRate(expense.fxRate)} {baseCurrency}
                           </p>
                         )}
-                        <ul className="space-y-1">
-                          {expense.splits.map((split) => {
-                            const paid = split.paidMinor ?? 0;
-                            return (
-                              <li key={split.memberId} className="flex justify-between text-sm">
-                                <span className="text-slate-600 dark:text-slate-400">{nameOf(split.memberId)}</span>
-                                <span className="text-slate-800 dark:text-slate-200">
-                                  {formatMinor(split.amountMinor, expense.currency)}
-                                  {paid > 0 && (
-                                    <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
-                                      заплатил(а) {formatMinor(paid, expense.currency)}
-                                    </span>
-                                  )}
-                                </span>
-                              </li>
-                            );
-                          })}
-                        </ul>
+                        <table className="w-full text-sm">
+                          <caption className="sr-only">Участники расхода «{expense.title}»</caption>
+                          <thead className="text-xs font-normal text-slate-400 dark:text-slate-500">
+                            <tr>
+                              <th scope="col" className="pb-1 text-left font-normal">Участник</th>
+                              <th scope="col" className="pb-1 pl-3 text-right font-normal">Доля</th>
+                              <th scope="col" className="pb-1 pl-3 text-right font-normal">Оплачено</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {expense.splits.map((split) => {
+                              const paid = payers.find((payer) => payer.memberId === split.memberId)?.amountMinor ?? 0;
+                              return (
+                                <tr key={split.memberId}>
+                                  <th scope="row" className="w-full max-w-0 break-words py-0.5 text-left align-top font-normal text-slate-600 dark:text-slate-400">
+                                    {nameOf(split.memberId)}
+                                  </th>
+                                  <td className="whitespace-nowrap py-0.5 pl-3 text-right align-top tabular-nums text-slate-800 dark:text-slate-200">
+                                    {formatMinor(split.amountMinor, expense.currency)}
+                                  </td>
+                                  <td className="whitespace-nowrap py-0.5 pl-3 text-right align-top tabular-nums text-slate-400 dark:text-slate-500">
+                                    {paid > 0 ? formatMinor(paid, expense.currency) : '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                         <button
                           type="button"
                           onClick={() => void handleDelete(expense)}
