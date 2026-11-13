@@ -217,6 +217,7 @@ describe('personal expense entry', () => {
     const data = vi.mocked(addExpense).mock.calls[0][1];
     const coupled = ['ana', 'ben'].includes(meId);
     expect(data.payerId).toBe(meId);
+    expect(data.createdByMemberId).toBe(meId);
     expect(data.amountMinor).toBe(1001);
     expect(data.baseAmountMinor).toBe(1001);
     expect(data.splits.map((split) => split.memberId)).toEqual(coupled ? ['ana', 'ben'] : [meId]);
@@ -249,7 +250,7 @@ describe('personal expense entry', () => {
     expect(container.textContent).toContain('Аня + Бен');
     expect(saveButton().disabled).toBe(false);
     await click('Сохранить расход');
-    expect(vi.mocked(addExpense).mock.calls[0][1].payerId).toBe('ben');
+    expect(vi.mocked(addExpense).mock.calls[0][1]).toMatchObject({ payerId: 'ben', createdByMemberId: 'ben' });
   });
 
   it('preserves both drafts, currency, date and custom shares when switching tabs', async () => {
@@ -277,6 +278,16 @@ describe('personal expense entry', () => {
       { memberId: 'ana', amountMinor: 618, paidMinor: 1235 },
       { memberId: 'ben', amountMinor: 617 },
     ]);
+  });
+
+  it.each(['ben', null, 'removed-member'])('records selected author independently of payer: %s', async (meId) => {
+    await open(meId);
+    await input('input[placeholder="Ужин в раменной"]', 'Чужой платёж');
+    await input('input[aria-label="Заплатил(а): Аня"]', '1000');
+    await click('Сохранить расход');
+    expect(vi.mocked(addExpense).mock.calls[0][1]).toMatchObject({
+      payerId: 'ana', createdByMemberId: meId === 'ben' ? 'ben' : null,
+    });
   });
 
   it('blocks invalid amounts, supports keyboard tabs and retains the draft after a failed save', async () => {

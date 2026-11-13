@@ -66,6 +66,33 @@ function setup(paired = false, beforeRead?: (table: string) => Promise<void>) {
 }
 
 const cleanup: (() => Promise<void>)[] = [];
+
+describe('expense authors', () => {
+  it.each([input, personalInput])('stores the author separately from the payer and preserves retries', async (payload) => {
+    const { service, rows } = setup(true);
+    const args = { ...payload, createdByMemberId: charlie };
+    const first = await service.addExpense(args);
+    expect(first.expense.created_by_member_id).toBe(charlie);
+    expect(first.expense.payer_id).not.toBe(charlie);
+    expect(await service.addExpense(args)).toEqual({ ...first, created: false });
+    await expect(service.addExpense({ ...args, createdByMemberId: alice })).rejects.toMatchObject({ status: 409 });
+    expect(rows).toHaveLength(1);
+  });
+
+  it('rejects an author outside the trip before inserting', async () => {
+    const { service, rows } = setup();
+    await expect(service.addExpense({ ...input, createdByMemberId: requestId })).rejects.toMatchObject({ status: 400 });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('does not guess authors for old clients and replays legacy rows without the column', async () => {
+    const { service, rows } = setup();
+    await service.addExpense(input);
+    expect(rows[0].created_by_member_id).toBeNull();
+    delete rows[0].created_by_member_id;
+    expect(await service.addExpense(input)).toMatchObject({ created: false });
+  });
+});
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map(close => close()));
   vi.mocked(suggestRate).mockResolvedValue(1.5);

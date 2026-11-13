@@ -178,3 +178,64 @@ describe('expense filters and daily summaries', () => {
     expect(onDelete).toHaveBeenCalledWith('shared');
   });
 });
+
+describe('expense author marker', () => {
+  const authorButton = () => container.querySelector<HTMLButtonElement>('[aria-label="Пава — автор расхода"]');
+  const tooltip = () => container.querySelector('[role="tooltip"]');
+  async function openExpense(expense: Expense = { ...shared, createdByMemberId: 'a' }) {
+    await render({ expenses: [expense] });
+    await act(async () => row(expense.title).querySelector('button')!.click());
+  }
+
+  it('marks the author rather than the payer; name tap shows a tooltip for exactly 2 seconds', async () => {
+    vi.useFakeTimers();
+    await openExpense();
+    expect(row(shared.title).textContent).toContain('Оплатил(а) Ден');
+    expect(container.querySelectorAll('tbody button')).toHaveLength(1);
+    expect(authorButton()!.closest('th')!.textContent).toBe('Пава');
+    expect(tooltip()).toBeNull();
+    await act(async () => authorButton()!.click());
+    expect(tooltip()?.textContent).toBe('Добавил расход');
+    expect(authorButton()?.getAttribute('aria-describedby')).toBe(tooltip()?.id);
+    await act(async () => vi.advanceTimersByTime(1999));
+    expect(tooltip()).not.toBeNull();
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(tooltip()).toBeNull();
+    await act(async () => authorButton()!.click());
+    await act(async () => vi.advanceTimersByTime(1999));
+    expect(tooltip()).not.toBeNull();
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(tooltip()).toBeNull();
+  });
+
+  it('closes on an outside tap or Escape and cleans up when the expense collapses', async () => {
+    vi.useFakeTimers();
+    await openExpense();
+    await act(async () => authorButton()!.click());
+    await act(async () => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })));
+    expect(tooltip()).toBeNull();
+    await act(async () => authorButton()!.click());
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+    expect(tooltip()).toBeNull();
+    await act(async () => authorButton()!.click());
+    await act(async () => row(shared.title).querySelector('button')!.click());
+    expect(tooltip()).toBeNull();
+    await act(async () => vi.advanceTimersByTime(2000));
+    expect(tooltip()).toBeNull();
+    await act(async () => row(shared.title).querySelector('button')!.click());
+    expect(tooltip()).toBeNull();
+  });
+
+  it.each([undefined, null, 'removed'])('does not mark anyone when the author is %s', async (createdByMemberId) => {
+    await openExpense({ ...shared, createdByMemberId });
+    expect(container.querySelector('tbody button')).toBeNull();
+    expect(container.textContent).not.toContain('Добавил:');
+  });
+
+  it('shows an author outside the split without adding a share or payment row', async () => {
+    await openExpense({ ...outsider, createdByMemberId: 'a' });
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(container.textContent).toContain('Добавил: Пава');
+    expect(container.querySelector('tbody button')).toBeNull();
+  });
+});

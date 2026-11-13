@@ -36,6 +36,7 @@ interface DbExpense {
   id: string;
   trip_id: string;
   payer_id: string;
+  created_by_member_id?: string | null;
   title: string;
   currency: string;
   amount: number;
@@ -59,6 +60,7 @@ function mapExpense(row: DbExpense): Expense {
     id: row.id,
     tripId: row.trip_id,
     payerId: row.payer_id,
+    createdByMemberId: row.created_by_member_id ?? null,
     title: row.title,
     currency: row.currency as CurrencyCode,
     amountMinor: Number(row.amount),
@@ -132,6 +134,7 @@ export interface TripBundle {
 
 export interface NewExpenseInput {
   payerId: string;
+  createdByMemberId?: string | null;
   title: string;
   currency: CurrencyCode;
   amountMinor: number;
@@ -267,6 +270,7 @@ export async function addExpense(tripId: string, input: NewExpenseInput): Promis
     .insert({
       trip_id: tripId,
       payer_id: input.payerId,
+      created_by_member_id: input.createdByMemberId ?? null,
       title: input.title,
       currency: input.currency,
       amount: input.amountMinor,

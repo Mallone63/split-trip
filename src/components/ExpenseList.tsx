@@ -6,6 +6,7 @@ import { readExpenseFilterPref, writeExpenseFilterPref } from '../lib/prefs';
 import { expenseDayTotals, expenseInvolvesWallet, isWalletOnlyExpense, walletExpenseShare } from '../lib/expenseView';
 import type { ExpenseFilter } from '../lib/expenseView';
 import type { Expense, Member } from '../lib/types';
+import ExpenseAuthor from './ExpenseAuthor';
 
 interface Props {
   expenses: Expense[];
@@ -162,6 +163,7 @@ export default function ExpenseList({
             <ul className="divide-y divide-slate-100 dark:divide-slate-800">
               {dayExpenses.map((expense) => {
                 const expanded = expandedId === expense.id;
+                const author = members.find((member) => member.id === expense.createdByMemberId);
                 const participantCount = expense.splits.length;
                 const payers = expensePayers(expense);
                 const share = walletExpenseShare(expense, myMemberIds);
@@ -228,7 +230,9 @@ export default function ExpenseList({
                               return (
                                 <tr key={split.memberId}>
                                   <th scope="row" className="w-full max-w-0 break-words py-0.5 text-left align-top font-normal text-slate-600 dark:text-slate-400">
-                                    {nameOf(split.memberId)}
+                                    {author?.id === split.memberId
+                                      ? <ExpenseAuthor name={author.name} />
+                                      : nameOf(split.memberId)}
                                   </th>
                                   <td className="whitespace-nowrap py-0.5 pl-3 text-right align-top tabular-nums text-slate-800 dark:text-slate-200">
                                     {formatMinor(split.amountMinor, expense.currency)}
@@ -241,6 +245,9 @@ export default function ExpenseList({
                             })}
                           </tbody>
                         </table>
+                        {author && !expense.splits.some((split) => split.memberId === author.id) && (
+                          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Добавил: {author.name}</p>
+                        )}
                         <button
                           type="button"
                           onClick={() => void handleDelete(expense)}
