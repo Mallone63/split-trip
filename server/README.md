@@ -43,11 +43,35 @@ Responses use the existing Supabase column names (`trip_id`, `amount`,
 `fx_rate`, `base_amount`, etc.); `splits` keeps the existing camelCase fields.
 All money amounts are **integer minor units**: 100 RUB = 10000, 100 JPY = 100.
 
-Example POST body (substitute real member UUIDs from GET `/api/trip`):
+### Expense kinds
+
+Both REST and MCP accept `kind: "shared"` or `kind: "personal"`. Omitting `kind`
+keeps the existing shared-expense behavior, so older clients continue to work.
+
+| Kind | Required fields besides requestId, title, currency, spentAt | Optional fields |
+| --- | --- | --- |
+| `shared` (default) | `participantIds`, `paid` | `shares`, `fxRate` |
+| `personal` | `memberId`, `amountMinor` | `fxRate` |
+
+For personal expenses, `memberId` is the identified member recording/paying the
+expense (the app's “me”). The server includes that member and everyone with the
+same non-null `unit`, splits the amount equally and records that member paying
+the whole amount. A member without a wallet stays solo. This matches the app's
+«Личная» mode: the expense appears in personal totals and history without
+changing wallet-level debts. It is still visible to everyone in the trip.
+No DB migration or new persisted flag is needed; the existing splits determine
+whether an expense is personal to a wallet.
+
+Do not send `participantIds`, `paid` or `shares` for personal expenses, or
+`memberId` / `amountMinor` for shared expenses. Mixed or incomplete payloads
+return 400; extra fields are not silently ignored.
+
+Example shared POST body (substitute real member UUIDs from GET `/api/trip`):
 
 ```json
 {
   "requestId": "cb515fce-9e50-4ef3-a7a2-fd3895a42740",
+  "kind": "shared",
   "title": "Ужин",
   "currency": "JPY",
   "spentAt": "2026-11-09",
@@ -56,6 +80,20 @@ Example POST body (substitute real member UUIDs from GET `/api/trip`):
     "0a0eb236-1269-493f-9c2b-af688f893062"
   ],
   "paid": [{ "memberId": "ab7fc31f-20c7-4d10-a870-410f8f63d518", "amountMinor": 12000 }]
+}
+```
+
+Example personal POST body (the member's wallet is resolved on the server):
+
+```json
+{
+  "requestId": "d5ea2d10-bf93-4b0b-828a-94f3b014c3eb",
+  "kind": "personal",
+  "title": "7-Eleven",
+  "currency": "JPY",
+  "spentAt": "2026-11-13",
+  "memberId": "ab7fc31f-20c7-4d10-a870-410f8f63d518",
+  "amountMinor": 4500
 }
 ```
 
@@ -68,8 +106,8 @@ curl http://127.0.0.1:3001/api/expenses \
   --data-binary @expense.json
 ```
 
-- `paid` can contain several payers; their sum is the expense total.
-- Omit `shares` for the app's equal split. For exact shares supply
+- For shared expenses, `paid` can contain several payers; their sum is the expense total.
+- For shared expenses, omit `shares` for the app's equal split. For exact shares supply
   `shares: [{ memberId, amountMinor }, ...]`; their total must equal total paid.
 - Optional `fxRate` is the rate to the trip's base currency. If omitted, use the
   same live suggestion as the app. It is frozen when recorded, including retries.
@@ -79,6 +117,9 @@ curl http://127.0.0.1:3001/api/expenses \
   on retry after a timeout. It becomes the expense primary key, so concurrent
   retries cannot insert duplicates. Reusing it for a different expense returns
   409. The same expense with a fresh UUID is a new record.
+- Personal retries are checked against the current wallet membership. If it has
+  changed and would produce different splits, the retry returns 409 and leaves
+  the saved expense untouched. Read the saved record; do not retry with a new UUID.
 - Invalid input returns 400, invalid token 401, oversized body 413,
   unsupported content type 415, backend failure 502. Error bodies: `{ error }`.
   On 502 retry with the original requestId; the first write may have succeeded.
@@ -86,9 +127,11 @@ curl http://127.0.0.1:3001/api/expenses \
 ## MCP
 
 Streamable HTTP endpoint: `https://your-api-host/mcp` (POST, stateless).
-Tools: `get_trip`, `list_expenses`, `add_expense`. The last tool accepts exactly
-the POST body above. Read the trip first to resolve names, and ask when the
-payer/currency/participants/date are unclear. Never guess a participant UUID.
+Tools: `get_trip`, `list_expenses`, `add_expense`. The last tool accepts either
+POST body above. Read the trip first to resolve names and wallets. Resolve the
+member identity, currency and local date for personal expenses; shared expenses
+also need payers and participants. Ask when those are unclear and never guess a
+member UUID. A request for a personal expense must use `kind: "personal"`.
 
 Connect using an MCP client that can set the Authorization bearer header.
 This process does **not** implement OAuth discovery/login. ChatGPT clients that
@@ -96,6 +139,12 @@ require OAuth for authenticated custom connectors need an OAuth gateway in
 front of this endpoint; the static token is not a drop-in OAuth credential.
 Dictation can supply text commands; live voice mode tool availability depends
 on the client. Deploying the process does not automatically connect it to a chat.
+
+After updating this code, redeploy/restart the separate Node server. Publishing
+GitHub Pages alone does not update MCP. Refresh the MCP client's tool definitions
+so `add_expense` exposes `kind`, `memberId` and `amountMinor`; a cached shared-only
+schema cannot call the new personal mode. If a gateway or plugin keeps its own
+static tool schema, update that schema to match this server as well.
 
 ## Verify
 
