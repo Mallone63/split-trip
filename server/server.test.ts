@@ -3,6 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { suggestRate } from '../src/lib/fx';
+import { aggregateByUnit, computeBalances } from '../src/lib/balances';
+import { isWalletOnlyExpense } from '../src/lib/expenseView';
+import type { Expense } from '../src/lib/types';
 import { createService } from './service';
 import { createHttpServer } from './http';
 
@@ -13,17 +16,27 @@ vi.mock('../src/lib/fx', async (original) => ({
 const tripId = '10000000-0000-4000-8000-000000000000';
 const alice = '20000000-0000-4000-8000-000000000000';
 const bob = '30000000-0000-4000-8000-000000000000';
+const charlie = '50000000-0000-4000-8000-000000000000';
 const requestId = '40000000-0000-4000-8000-000000000000';
 const token = 'a'.repeat(64);
 const input = {
   requestId, title: 'Ужин', currency: 'JPY', spentAt: '2026-11-09',
   participantIds: [bob, alice], paid: [{ memberId: alice, amountMinor: 101 }],
 };
+const personalInput = {
+  requestId, kind: 'personal', title: '7-Eleven', currency: 'JPY', spentAt: '2026-11-13',
+  memberId: bob, amountMinor: 4501,
+};
 
 // Exercise the actual Supabase HTTP client against an in-memory PostgREST boundary.
-function setup() {
+function setup(paired = false) {
   const rows: Record<string, unknown>[] = [];
   const calls: URL[] = [];
+  const members = [
+    { id: alice, trip_id: tripId, name: 'Alice', unit: paired ? 'couple' : null },
+    { id: bob, trip_id: tripId, name: 'Bob', unit: paired ? 'couple' : null },
+    { id: charlie, trip_id: tripId, name: 'Charlie', unit: null },
+  ];
   let failInsert = false;
   const db = createClient('https://example.supabase.co', 'anon-key', {
     auth: { persistSession: false },
@@ -34,10 +47,7 @@ function setup() {
       let body: unknown;
       let status = 200;
       if (table === 'trips') body = { id: tripId, name: 'Japan', base_currency: 'USD' };
-      else if (table === 'members') body = [
-        { id: alice, trip_id: tripId, name: 'Alice', unit: null },
-        { id: bob, trip_id: tripId, name: 'Bob', unit: null },
-      ];
+      else if (table === 'members') body = members;
       else if (init?.method === 'POST') {
         const row = JSON.parse(String(init.body));
         if (failInsert) { status = 503; body = { message: 'unavailable' }; }
@@ -51,7 +61,7 @@ function setup() {
       return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
     } },
   });
-  return { service: createService(db, tripId), rows, calls, fail: () => { failInsert = true; } };
+  return { service: createService(db, tripId), rows, calls, members, fail: () => { failInsert = true; } };
 }
 
 const cleanup: (() => Promise<void>)[] = [];
@@ -60,8 +70,8 @@ afterEach(async () => {
   vi.mocked(suggestRate).mockResolvedValue(1.5);
 });
 
-async function listen() {
-  const fixture = setup();
+async function listen(paired = false) {
+  const fixture = setup(paired);
   const server = createHttpServer(fixture.service, token);
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -81,6 +91,92 @@ async function listen() {
 }
 
 describe('expense service', () => {
+  it('accepts an explicit shared kind and preserves legacy requests', async () => {
+    const { service, rows } = setup();
+    const original = await service.addExpense(input);
+    const replay = await service.addExpense({ ...input, kind: 'shared' });
+    expect(replay).toEqual({ ...original, created: false });
+    expect(rows).toHaveLength(1);
+  });
+
+  it('adds a personal expense for the whole wallet with no wallet debt', async () => {
+    vi.mocked(suggestRate).mockResolvedValue(0.0001);
+    const { service, members } = setup(true);
+    const { expense: row } = await service.addExpense(personalInput);
+    expect(row).toMatchObject({
+      payer_id: bob, amount: 4501, base_amount: 46, fx_rate: 0.0001,
+      splits: [
+        { memberId: alice, amountMinor: 2250 },
+        { memberId: bob, amountMinor: 2251, paidMinor: 4501 },
+      ],
+    });
+    const expense: Expense = {
+      id: row.id, tripId: row.trip_id, payerId: row.payer_id, title: row.title,
+      currency: 'JPY', amountMinor: row.amount, fxRate: row.fx_rate,
+      baseAmountMinor: row.base_amount, splits: row.splits, spentAt: row.spent_at,
+    };
+    const appMembers = members.map(m => ({ ...m, tripId: m.trip_id }));
+    const balances = computeBalances(appMembers, [expense], 'JPY');
+    expect(aggregateByUnit(appMembers, balances).map(w => w.netMinor)).toEqual([0, 0]);
+    expect(isWalletOnlyExpense(expense, new Set([alice, bob]))).toBe(true);
+    expect(isWalletOnlyExpense(expense, new Set([charlie]))).toBe(false);
+  });
+
+  it('keeps an unpaired personal expense solo instead of grouping all null units', async () => {
+    const { service } = setup();
+    const { expense } = await service.addExpense(personalInput);
+    expect(expense.splits).toEqual([{ memberId: bob, amountMinor: 4501, paidMinor: 4501 }]);
+  });
+
+  it('supports a one-yen personal expense with a zero share for the partner', async () => {
+    const { service } = setup(true);
+    const { expense } = await service.addExpense({ ...personalInput, amountMinor: 1 });
+    expect(expense.splits).toEqual([
+      { memberId: alice, amountMinor: 0 }, { memberId: bob, amountMinor: 1, paidMinor: 1 },
+    ]);
+  });
+
+  it.each(['RUB', 'USD', 'JPY'])('accepts personal integer minor amounts in %s', async currency => {
+    const { service } = setup(true);
+    const { expense } = await service.addExpense({ ...personalInput, currency, amountMinor: 101, fxRate: 1 });
+    expect(expense.amount).toBe(101);
+    expect(expense.currency).toBe(currency);
+    expect(expense.base_amount).toBe(currency === 'JPY' ? 10100 : 101);
+  });
+
+  it('replays personal expenses without duplicates and retains the frozen rate', async () => {
+    const { service, rows } = setup(true);
+    const results = await Promise.all([
+      service.addExpense(personalInput), service.addExpense(personalInput),
+    ]);
+    expect(results.map(r => r.created).sort()).toEqual([false, true]);
+    vi.mocked(suggestRate).mockResolvedValue(99);
+    expect(await service.addExpense(personalInput)).toMatchObject({ created: false, expense: { fx_rate: 1.5 } });
+    await expect(service.addExpense({ ...personalInput, amountMinor: 4502 })).rejects.toMatchObject({ status: 409 });
+    expect(rows).toHaveLength(1);
+  });
+
+  it('rejects a retry after wallet membership changes instead of rewriting the saved split', async () => {
+    const { service, rows, members } = setup(true);
+    const saved = await service.addExpense(personalInput);
+    members[0].unit = null;
+    await expect(service.addExpense(personalInput)).rejects.toMatchObject({ status: 409 });
+    expect(rows).toEqual([saved.expense]);
+  });
+
+  it.each([
+    { memberId: undefined }, { memberId: requestId }, { amountMinor: undefined },
+    { amountMinor: 0 }, { amountMinor: -1 }, { amountMinor: 1.5 },
+    { amountMinor: Number.MAX_SAFE_INTEGER + 1 },
+    { kind: 'other' }, { participantIds: [bob] },
+    { paid: [{ memberId: bob, amountMinor: 4501 }] },
+    { shares: [{ memberId: bob, amountMinor: 4501 }] },
+  ])('rejects incomplete or mixed personal payloads: %j', async patch => {
+    const { service, rows } = setup(true);
+    await expect(service.addExpense({ ...personalInput, ...patch })).rejects.toThrow();
+    expect(rows).toHaveLength(0);
+  });
+
   it('uses existing equal-split rounding, per-split FX and one-trip queries', async () => {
     vi.mocked(suggestRate).mockResolvedValue(0.0001);
     const { service, calls } = setup();
@@ -128,6 +224,10 @@ describe('expense service', () => {
   });
 
   it.each([
+    { participantIds: undefined },
+    { paid: undefined },
+    { memberId: alice },
+    { amountMinor: 101 },
     { participantIds: [alice, alice] },
     { participantIds: [requestId] },
     { paid: [{ memberId: requestId, amountMinor: 100 }] },
@@ -144,6 +244,41 @@ describe('expense service', () => {
 });
 
 describe('REST and MCP transports', () => {
+  it('creates and replays personal expenses through REST and rejects mixed modes', async () => {
+    const { request, rows } = await listen(true);
+    const post = (body: unknown) => request('/api/expenses', { method: 'POST', body: JSON.stringify(body) });
+    const response = await post(personalInput);
+    expect(response.status).toBe(201);
+    expect((await response.json()).expense.splits).toHaveLength(2);
+    expect((await post(personalInput)).status).toBe(200);
+    expect((await post({ ...personalInput, paid: input.paid })).status).toBe(400);
+    expect((await post({ ...personalInput, memberId: requestId })).status).toBe(400);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('advertises both kinds in MCP and records a personal expense through the real client', async () => {
+    const { base, rows } = await listen(true);
+    const client = new Client({ name: 'personal-test-client', version: '1.0.0' });
+    cleanup.push(() => client.close());
+    await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp'), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+    }));
+    const tool = (await client.listTools()).tools.find(t => t.name === 'add_expense')!;
+    expect(tool.inputSchema.properties).toMatchObject({
+      kind: { enum: ['shared', 'personal'], default: 'shared' },
+      memberId: { type: 'string' }, amountMinor: { type: 'integer' },
+    });
+    expect(tool.inputSchema.required).not.toContain('participantIds');
+    expect(tool.inputSchema.required).not.toContain('paid');
+    const result = await client.callTool({ name: 'add_expense', arguments: personalInput });
+    expect(result.isError).not.toBe(true);
+    expect(rows[0]).toMatchObject({ amount: 4501, payer_id: bob });
+    expect((await client.callTool({ name: 'add_expense', arguments: personalInput })).isError).not.toBe(true);
+    expect((await client.callTool({ name: 'add_expense', arguments: { ...personalInput, memberId: requestId } })).isError).toBe(true);
+    expect((await client.callTool({ name: 'add_expense', arguments: { ...personalInput, paid: input.paid } })).isError).toBe(true);
+    expect(rows).toHaveLength(1);
+  });
+
   it('authenticates reads and writes, rejects origins and malformed bodies', async () => {
     const { base, request, rows } = await listen();
     expect((await fetch(base + '/api/trip')).status).toBe(401);

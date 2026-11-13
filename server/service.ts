@@ -12,16 +12,38 @@ const entry = z.object({
 
 export const expenseInput = z.object({
   requestId: z.uuid().describe('New UUID per expense; reuse exactly on retries.'),
+  kind: z.enum(['shared', 'personal']).default('shared')
+    .describe('shared (default): use participantIds and paid, optionally shares. personal: use memberId and amountMinor only; includes their whole wallet automatically.'),
   title: z.string().trim().min(1).max(500),
   currency: z.enum(['RUB', 'USD', 'JPY']),
   spentAt: z.iso.date().describe('Explicit local spending date, YYYY-MM-DD.'),
-  participantIds: z.array(z.uuid()).min(1).max(100),
-  paid: z.array(entry).min(1).max(100).describe('Who paid, in integer minor units; JPY has no decimals.'),
+  memberId: z.uuid().optional()
+    .describe('Required for personal only: member recording/paying the expense, as me in the app. Resolve from get_trip; never guess.'),
+  amountMinor: entry.shape.amountMinor.optional()
+    .describe('Required for personal only: total in integer minor units; JPY has no decimals.'),
+  participantIds: z.array(z.uuid()).min(1).max(100).optional()
+    .describe('Required for shared only: members participating in the expense.'),
+  paid: z.array(entry).min(1).max(100).optional()
+    .describe('Required for shared only: who paid, in integer minor units; JPY has no decimals.'),
   shares: z.array(entry).min(1).max(100).optional()
-    .describe('Exact bill shares. Omit for equal split, as in the app.'),
+    .describe('Shared only: exact bill shares. Omit for equal split, as in the app.'),
   fxRate: z.number().positive().finite().optional()
     .describe('Base currency per one expense currency unit. Omit to use the current rate.'),
 }).strict();
+
+// Keep a flat object for MCP clients; enforce mode-specific requirements for both
+// transports in the service. Reject mixed payloads rather than ignoring money fields.
+const sharedExpenseInput = expenseInput.required({ participantIds: true, paid: true }).extend({
+  kind: z.literal('shared'),
+  memberId: z.never().optional(),
+  amountMinor: z.never().optional(),
+});
+const personalExpenseInput = expenseInput.required({ memberId: true, amountMinor: true }).extend({
+  kind: z.literal('personal'),
+  participantIds: z.never().optional(),
+  paid: z.never().optional(),
+  shares: z.never().optional(),
+});
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -86,21 +108,40 @@ export function createService(db: SupabaseClient, tripId: string) {
   }
 
   async function addExpense(value: unknown) {
-    const input = expenseInput.parse(value);
+    const raw = expenseInput.parse(value);
+    const input = raw.kind === 'personal'
+      ? personalExpenseInput.parse(raw) : sharedExpenseInput.parse(raw);
     const { trip, members } = await getTrip();
     if (!isCurrencyCode(trip.base_currency)) throw new ApiError(400, 'Unsupported trip currency');
     const memberOrder = members.map(m => m.id as string);
-    if (new Set(input.participantIds).size !== input.participantIds.length ||
-        input.participantIds.some(id => !memberOrder.includes(id))) {
-      throw new ApiError(400, 'Participants must be unique members of this trip');
+    let participantIds: string[];
+    if (input.kind === 'personal') {
+      const member = members.find(m => m.id === input.memberId);
+      if (!member) throw new ApiError(400, 'Personal expense member must belong to this trip');
+      // Same semantics as the app's personal form: me plus my non-null wallet.
+      // Unpaired members stay solo; null units must never group unrelated people.
+      participantIds = members.filter(m => m.id === member.id ||
+        (member.unit != null && m.unit === member.unit)).map(m => m.id as string);
+    } else {
+      participantIds = input.participantIds;
+      if (new Set(participantIds).size !== participantIds.length ||
+          participantIds.some(id => !memberOrder.includes(id))) {
+        throw new ApiError(400, 'Participants must be unique members of this trip');
+      }
     }
     // Match the form's member ordering, tie breaks and rounding; do not recalculate in the model.
-    const participants = memberOrder.filter(id => input.participantIds.includes(id));
+    const participants = memberOrder.filter(id => participantIds.includes(id));
     let resolved;
     try {
-      resolved = input.shares
-        ? materializeCustomSplit(input.shares, input.paid, participants, memberOrder)
-        : materializePaidSplit(input.paid, participants, memberOrder);
+      if (input.kind === 'personal') {
+        resolved = materializePaidSplit(
+          [{ memberId: input.memberId, amountMinor: input.amountMinor }], participants, memberOrder,
+        );
+      } else {
+        resolved = input.shares
+          ? materializeCustomSplit(input.shares, input.paid, participants, memberOrder)
+          : materializePaidSplit(input.paid, participants, memberOrder);
+      }
     } catch (error) {
       throw new ApiError(400, error instanceof Error ? error.message : 'Invalid split');
     }
