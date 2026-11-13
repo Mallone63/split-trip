@@ -18,7 +18,7 @@ export const expenseInput = z.object({
   currency: z.enum(['RUB', 'USD', 'JPY']),
   spentAt: z.iso.date().describe('Explicit local spending date, YYYY-MM-DD.'),
   memberId: z.uuid().optional()
-    .describe('Required for personal only: member recording/paying the expense, as me in the app. Resolve from get_trip; never guess.'),
+    .describe('Personal only: identified member recording/paying, as me in the app. Reuse a known get_trip ID; fetch only if unresolved.'),
   amountMinor: entry.shape.amountMinor.optional()
     .describe('Required for personal only: total in integer minor units; JPY has no decimals.'),
   participantIds: z.array(z.uuid()).min(1).max(100).optional()
@@ -111,7 +111,11 @@ export function createService(db: SupabaseClient, tripId: string) {
     const raw = expenseInput.parse(value);
     const input = raw.kind === 'personal'
       ? personalExpenseInput.parse(raw) : sharedExpenseInput.parse(raw);
-    const { trip, members } = await getTrip();
+    // These reads are independent: keep membership fresh without making the
+    // duplicate check wait for a second database round trip.
+    const [{ trip, members }, existing] = await Promise.all([
+      getTrip(), findExpense(input.requestId),
+    ]);
     if (!isCurrencyCode(trip.base_currency)) throw new ApiError(400, 'Unsupported trip currency');
     const memberOrder = members.map(m => m.id as string);
     let participantIds: string[];
@@ -145,7 +149,6 @@ export function createService(db: SupabaseClient, tripId: string) {
     } catch (error) {
       throw new ApiError(400, error instanceof Error ? error.message : 'Invalid split');
     }
-    const existing = await findExpense(input.requestId);
     // A retry must retain the originally frozen rate even if the live rate changed.
     const rate = input.fxRate ?? existing?.fx_rate ?? await suggestRate(input.currency, trip.base_currency);
     const amount = resolved.splits.reduce((sum, split) => sum + split.amountMinor, 0);
