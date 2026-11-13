@@ -24,6 +24,8 @@ create table public.expenses (
   id uuid primary key default gen_random_uuid(),
   trip_id uuid not null references public.trips (id) on delete cascade,
   payer_id uuid not null references public.members (id) on delete restrict,
+  -- Who entered the record, not who paid. NULL when identity is unknown.
+  created_by_member_id uuid references public.members (id) on delete set null,
   title text not null,
   currency text not null,
   amount numeric not null check (amount > 0),      -- integer minor units (e.g. cents)

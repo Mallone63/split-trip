@@ -81,7 +81,10 @@ export default function App() {
 
   async function handleAddExpense(input: NewExpenseInput) {
     if (!tripId) return;
-    const expense = await addExpense(tripId, input);
+    const expense = await addExpense(tripId, {
+      ...input,
+      createdByMemberId: bundle?.members.find((member) => member.id === meId)?.id ?? null,
+    });
     setBundle((current) =>
       current ? { ...current, expenses: [expense, ...current.expenses.filter((row) => row.id !== expense.id)] } : current,
     );

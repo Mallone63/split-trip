@@ -30,6 +30,8 @@ export interface Expense {
   id: string;
   tripId: string;
   payerId: string;
+  /** Member who entered the expense; independent of who paid. Unknown for legacy rows. */
+  createdByMemberId?: string | null;
   title: string;
   /** Currency the money was actually paid in. */
   currency: CurrencyCode;

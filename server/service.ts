@@ -12,6 +12,8 @@ const entry = z.object({
 
 export const expenseInput = z.object({
   requestId: z.uuid().describe('New UUID per expense; reuse exactly on retries.'),
+  createdByMemberId: z.uuid().optional()
+    .describe('Member entering this record, independent of the payer. Use the known requesting member; omit if unknown, never infer from who paid.'),
   kind: z.enum(['shared', 'personal']).default('shared')
     .describe('shared (default): use participantIds and paid, optionally shares. personal: use memberId and amountMinor only; includes their whole wallet automatically.'),
   title: z.string().trim().min(1).max(500),
@@ -59,6 +61,7 @@ interface ExpenseRow {
   id: string;
   trip_id: string;
   payer_id: string;
+  created_by_member_id?: string | null;
   title: string;
   currency: string;
   amount: number;
@@ -73,7 +76,7 @@ interface ExpenseRow {
 function sameExpense(a: ExpenseRow, b: ExpenseRow): boolean {
   const canonical = (row: ExpenseRow) => [
     row.id, row.trip_id, row.payer_id, row.title, row.currency,
-    row.amount, row.fx_rate, row.base_amount, row.spent_at,
+    row.amount, row.fx_rate, row.base_amount, row.spent_at, row.created_by_member_id ?? null,
     row.splits.map(s => ({
       memberId: s.memberId, amountMinor: s.amountMinor, paidMinor: s.paidMinor ?? 0,
     })).sort((x, y) => x.memberId.localeCompare(y.memberId)),
@@ -118,6 +121,9 @@ export function createService(db: SupabaseClient, tripId: string) {
     ]);
     if (!isCurrencyCode(trip.base_currency)) throw new ApiError(400, 'Unsupported trip currency');
     const memberOrder = members.map(m => m.id as string);
+    if (input.createdByMemberId && !memberOrder.includes(input.createdByMemberId)) {
+      throw new ApiError(400, 'Expense author must belong to this trip');
+    }
     let participantIds: string[];
     if (input.kind === 'personal') {
       const member = members.find(m => m.id === input.memberId);
@@ -159,6 +165,7 @@ export function createService(db: SupabaseClient, tripId: string) {
     }
     const row: ExpenseRow = {
       id: input.requestId, trip_id: tripId, payer_id: resolved.primaryPayerId,
+      created_by_member_id: input.createdByMemberId ?? null,
       title: input.title, currency: input.currency, amount, fx_rate: rate,
       base_amount: baseAmount, splits: resolved.splits, spent_at: input.spentAt,
     };

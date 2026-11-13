@@ -1,7 +1,7 @@
 # Split Trip API / MCP
 
 An optional Node 22+ process, separate from the static PWA. It uses the existing
-`split.ts`, `fx.ts` and currency rules without changing the app or DB schema.
+`split.ts`, `fx.ts` and currency rules with the same database as the app.
 Both REST and MCP call the same service and are scoped to one configured trip.
 No editing, deletion, settlement or wallet tools are exposed.
 
@@ -83,6 +83,16 @@ keeps the existing shared-expense behavior, so older clients continue to work.
 | --- | --- | --- |
 | `shared` (default) | `participantIds`, `paid` | `shares`, `fxRate` |
 | `personal` | `memberId`, `amountMinor` | `fxRate` |
+
+Both kinds also accept optional `createdByMemberId`: the known member entering
+the record, independent of who paid or whose wallet the expense belongs to.
+It must belong to this trip but need not be included in the split. Omit it when
+unknown; the service does not guess an author. Retry with the same author and
+requestId. Responses include `created_by_member_id` (nullable).
+
+Before deploying this version of either client, apply
+`supabase/migrations/20261113120000_expense_author.sql` to the existing database.
+See `supabase/README.md` for rollout order and local migration checks.
 
 For personal expenses, `memberId` is the identified member recording/paying the
 expense (the app's “me”). The server includes that member and everyone with the

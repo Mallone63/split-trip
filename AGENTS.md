@@ -54,6 +54,9 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
   `App.tsx` owns all state/mutations and wraps every screen in `Shell`; components
   stay presentational and receive async callbacks.
 - `supabase/schema.sql` — single source of truth for the DB (tables + permissive RLS + realtime).
+- `supabase/migrations/` — incremental SQL for existing databases. Apply migrations
+  before shipping clients that use new columns. SQL tests use isolated PGlite;
+  never validate writes or migrations against the real trip.
 
 ## UI & theming
 
@@ -118,6 +121,10 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
 - Realtime may deliver a successful write before its API response arrives.
   Merge inserted rows by ID, including members/payments/transfers; never append
   an already-present ID. Cached snapshots may contain duplicates from old clients.
+- `expenses.created_by_member_id` stores the selected valid "me" at creation,
+  independently of the payer. MCP/REST accepts optional `createdByMemberId`;
+  never infer it from payments. Legacy/unknown authors stay NULL. The author dot
+  opens a tooltip on the whole name, closes after 2 seconds, outside tap or Escape.
 - `BalanceTab` ledger memoization must depend on `transfers` as well as expenses,
   payments and members, including transfer creation/undo without other changes.
 - `vite.config.ts` uses `base: './'` and `index.html` references public assets
