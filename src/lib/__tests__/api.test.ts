@@ -18,6 +18,29 @@ const row = { id: 'expense', trip_id: 'trip', payer_id: 'payer', title: input.ti
   currency: 'JPY', amount: 100, fx_rate: 1, base_amount: 100, splits: input.splits, spent_at: input.spentAt };
 
 describe('expense author persistence', () => {
+  it('keeps old databases writable until the migration is applied', async () => {
+    http.mockResolvedValueOnce(new Response(JSON.stringify({ code: 'PGRST204',
+      message: "Could not find the 'created_by_member_id' column of 'expenses' in the schema cache" }), { status: 400 }));
+    http.mockImplementation(async (_url, init) => Response.json({ id: 'expense', ...JSON.parse(init.body) }));
+    const saved = await addExpense('trip', { ...input, createdByMemberId: 'author' });
+    expect(http).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(http.mock.calls[1][1].body)).not.toHaveProperty('created_by_member_id');
+    expect(saved.createdByMemberId).toBeNull();
+    // Once migrated, the next write includes the author without a cached downgrade.
+    expect((await addExpense('trip', { ...input, createdByMemberId: 'author' })).createdByMemberId).toBe('author');
+    expect(http).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    { code: 'PGRST204', message: "Could not find the 'title' column" },
+    { code: '23503', message: 'Invalid member' },
+    { code: '503', message: 'Backend unavailable' },
+  ])('does not retry other failures: $code', async (error) => {
+    http.mockResolvedValue(new Response(JSON.stringify(error), { status: 400 }));
+    await expect(addExpense('trip', input)).rejects.toThrow(error.message);
+    expect(http).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['author', null, undefined])('writes and maps author %s', async (createdByMemberId) => {
     http.mockImplementation(async (_url, init) => new Response(JSON.stringify({ id: 'expense', ...JSON.parse(init.body) }), {
       status: 201, headers: { 'Content-Type': 'application/json' },

@@ -265,24 +265,27 @@ export async function loadTripBundle(tripId: string, signal?: AbortSignal): Prom
 
 export async function addExpense(tripId: string, input: NewExpenseInput): Promise<Expense> {
   const client = db();
-  const { data, error } = await client
-    .from('expenses')
-    .insert({
-      trip_id: tripId,
-      payer_id: input.payerId,
-      created_by_member_id: input.createdByMemberId ?? null,
-      title: input.title,
-      currency: input.currency,
-      amount: input.amountMinor,
-      fx_rate: input.fxRate,
-      base_amount: input.baseAmountMinor,
-      splits: input.splits,
-      spent_at: input.spentAt,
-    })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return mapExpense(data as DbExpense);
+  const row = {
+    trip_id: tripId,
+    payer_id: input.payerId,
+    title: input.title,
+    currency: input.currency,
+    amount: input.amountMinor,
+    fx_rate: input.fxRate,
+    base_amount: input.baseAmountMinor,
+    splits: input.splits,
+    spent_at: input.spentAt,
+  };
+  let result = await client.from('expenses')
+    .insert({ ...row, created_by_member_id: input.createdByMemberId ?? null }).select().single();
+  // A missing-column schema-cache rejection happens before SQL executes, so only
+  // this specific error is safe to retry without author metadata during rollout.
+  // Never retry uncertain writes (timeouts/network errors) with a new row ID.
+  if (result.error?.code === 'PGRST204' && result.error.message.includes("'created_by_member_id'")) {
+    result = await client.from('expenses').insert(row).select().single();
+  }
+  if (result.error) throw new Error(result.error.message);
+  return mapExpense(result.data as DbExpense);
 }
 
 export async function deleteExpense(expenseId: string): Promise<void> {
