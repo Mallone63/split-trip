@@ -128,10 +128,34 @@ curl http://127.0.0.1:3001/api/expenses \
 
 Streamable HTTP endpoint: `https://your-api-host/mcp` (POST, stateless).
 Tools: `get_trip`, `list_expenses`, `add_expense`. The last tool accepts either
-POST body above. Read the trip first to resolve names and wallets. Resolve the
-member identity, currency and local date for personal expenses; shared expenses
-also need payers and participants. Ask when those are unclear and never guess a
-member UUID. A request for a personal expense must use `kind: "personal"`.
+POST body above. Resolve names and wallets once with `get_trip`, then reuse the
+returned IDs for this configured trip in the same conversation. Refresh when
+context is missing, membership changes, or the server rejects a stale ID. The
+server still validates current membership on every write; it does not cache wallets.
+A request for a personal expense uses `kind: "personal"` and the identified
+requesting member. Shared expenses also need resolved payers and participants.
+
+### Fast entry workflow
+
+- Reuse established user defaults: today in the known user timezone and the
+  established trip currency when omitted. Ask only about unresolved details;
+  never invent an identity, shared participants or a timezone.
+- With known IDs, a routine entry needs just **one tool call: `add_expense`**.
+  Otherwise call `get_trip` once, then `add_expense`.
+- Do not fetch history, search personal context, browse or inspect source code
+  when the conversation already contains the data needed for the expense.
+- Generate a request UUID locally. Duplicate retries are handled by that UUID,
+  not by scanning history or comparing titles/amounts (identical purchases can
+  be legitimate separate expenses).
+- Treat the successful write response as confirmation and answer in one short
+  sentence. No follow-up verification read is needed. An uncertain write must
+  retry with the exact same UUID and body.
+
+These rules are advertised in MCP initialization instructions and tool descriptions.
+Clients with static descriptions must refresh those too. The server overlaps the
+trip/member reads and requestId lookup, removing one sequential database wait
+without weakening validation or duplicate protection. Model and network latency
+still depend on the client and deployment.
 
 Connect using an MCP client that can set the Authorization bearer header.
 This process does **not** implement OAuth discovery/login. ChatGPT clients that

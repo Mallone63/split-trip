@@ -29,7 +29,7 @@ const personalInput = {
 };
 
 // Exercise the actual Supabase HTTP client against an in-memory PostgREST boundary.
-function setup(paired = false) {
+function setup(paired = false, beforeRead?: (table: string) => Promise<void>) {
   const rows: Record<string, unknown>[] = [];
   const calls: URL[] = [];
   const members = [
@@ -44,6 +44,7 @@ function setup(paired = false) {
       const parsed = new URL(String(url));
       calls.push(parsed);
       const table = parsed.pathname.split('/').pop();
+      if (init?.method !== 'POST') await beforeRead?.(table ?? '');
       let body: unknown;
       let status = 200;
       if (table === 'trips') body = { id: tripId, name: 'Japan', base_currency: 'USD' };
@@ -91,6 +92,27 @@ async function listen(paired = false) {
 }
 
 describe('expense service', () => {
+  it('starts the duplicate lookup while membership is loading and waits before writing', async () => {
+    let releaseMembers!: () => void;
+    const membersReady = new Promise<void>(resolve => { releaseMembers = resolve; });
+    const { service, rows, calls } = setup(true, async table => {
+      if (table === 'members') await membersReady;
+    });
+    const pending = service.addExpense(personalInput);
+    try {
+      await vi.waitFor(() => {
+        expect(calls.some(url => url.pathname.endsWith('/expenses') &&
+          url.searchParams.get('id') === `eq.${requestId}`)).toBe(true);
+      });
+      expect(rows).toHaveLength(0);
+    } finally {
+      releaseMembers();
+      await pending;
+    }
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ amount: 4501, payer_id: bob });
+  });
+
   it('accepts an explicit shared kind and preserves legacy requests', async () => {
     const { service, rows } = setup();
     const original = await service.addExpense(input);

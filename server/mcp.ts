@@ -2,7 +2,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { expenseInput, errorResponse, type ExpenseService } from './service';
 
 export function createMcpServer(service: ExpenseService): McpServer {
-  const server = new McpServer({ name: 'split-trip', version: '1.1.0' });
+  const server = new McpServer({ name: 'split-trip', version: '1.2.0' }, {
+    instructions: 'For routine expense entry, take the shortest valid path. Reuse trip/member IDs already resolved by get_trip in this conversation for this configured trip; refresh only if missing, ambiguous, changed, or rejected. Use established user defaults: an omitted date means today in the known user timezone, and an omitted currency uses the established trip currency. Never invent an identity or shared participants. For personal expenses use the known requesting member as memberId; the server selects their wallet. Call add_expense directly once the fields are resolved. Do not read expense history, inspect source code, browse, or search personal context when this conversation already supplies the required data. Generate a UUID locally. A successful add_expense response is sufficient confirmation: do not reread the trip or history to verify it. Reply in one short sentence with title, amount and scope. On an uncertain write retry the same requestId and arguments; never use a fresh UUID. Ask only for genuinely unresolved details.',
+  });
   const result = async (call: () => Promise<unknown>) => {
     try {
       return { content: [{ type: 'text' as const, text: JSON.stringify(await call()) }] };
@@ -11,15 +13,15 @@ export function createMcpServer(service: ExpenseService): McpServer {
     }
   };
   server.registerTool('get_trip', {
-    description: 'Read the configured trip and its members. Resolve names to these IDs before adding expenses. Ask if names are ambiguous.',
+    description: 'Resolve the configured trip, currency, members and wallets when unknown or changed. Reuse IDs already resolved in this conversation; do not call before every expense. Ask only if identity remains ambiguous.',
     inputSchema: {}, annotations: { readOnlyHint: true },
   }, () => result(service.getTrip));
   server.registerTool('list_expenses', {
-    description: 'Read the 100 most recent expenses. All amounts are integer minor units: RUB/USD cents, JPY yen.',
+    description: 'Read the 100 most recent expenses when the user asks for history or an uncertain record needs investigation. Not needed before or after a successful add_expense. Amounts: RUB/USD cents, JPY yen.',
     inputSchema: {}, annotations: { readOnlyHint: true },
   }, () => result(service.listExpenses));
   server.registerTool('add_expense', {
-    description: 'Add a shared or personal expense. Read get_trip first to resolve names and wallets. kind=shared (default) requires participantIds and paid, with optional exact shares. kind=personal requires memberId and amountMinor; it automatically includes that member and everyone sharing their non-null unit, without changing wallet debts. Do not supply participantIds, paid or shares for personal expenses. Ask when currency, local date or member identity is unclear; for shared expenses also resolve payers and participants. Use a new UUID requestId for each expense and reuse it with the same arguments on retries. Amounts are integer minor units (100 RUB = 10000; 100 JPY = 100).',
+    description: 'Record an expense directly using known member IDs and established currency/date defaults; call get_trip only for unresolved or changed context. shared (default): participantIds + paid, optional shares. personal: memberId + amountMinor only; the whole wallet is included automatically with no wallet debt. Ask only for unresolved identity, payer, participants, currency or local date. Use a fresh UUID per new expense; reuse the exact UUID and arguments on retry. Do not list history to check duplicates: requestId handles retries. Amounts: 100 RUB = 10000; 100 JPY = 100. On success, confirm briefly without a verification read.',
     inputSchema: expenseInput,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, input => result(() => service.addExpense(input)));
