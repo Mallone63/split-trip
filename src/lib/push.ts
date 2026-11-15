@@ -48,6 +48,16 @@ function readDevice(): Device | null {
 function saveDevice(device: Device) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(device));
 }
+export function pushPromptDismissed(tripId: string, memberId: string | null): boolean {
+  try {
+    return localStorage.getItem(`tripsplit:push-prompt:${tripId}:${memberId ?? 'unknown'}`) === '1';
+  } catch { return false; }
+}
+export function dismissPushPrompt(tripId: string, memberId: string | null): void {
+  try {
+    localStorage.setItem(`tripsplit:push-prompt:${tripId}:${memberId ?? 'unknown'}`, '1');
+  } catch { /* The prompt may reappear when storage is unavailable. */ }
+}
 function getDevice(): Device {
   let device = readDevice();
   if (device) return device;
@@ -152,6 +162,7 @@ export async function enablePush(
     preferences,
   });
   saveDevice({ ...device, tripId, memberId, preferences });
+  dismissPushPrompt(tripId, memberId);
 }
 export async function disablePush() {
   const d = readDevice();
@@ -168,6 +179,7 @@ export async function disablePush() {
     await (await reg?.pushManager.getSubscription())?.unsubscribe();
   }
   saveDevice({ ...d, memberId: undefined, tripId: undefined });
+  if (d.tripId) dismissPushPrompt(d.tripId, d.memberId);
 }
 export async function disconnectPushOnIdentityChange(
   tripId: string,
@@ -177,7 +189,7 @@ export async function disconnectPushOnIdentityChange(
   if (d?.memberId && (d.tripId !== tripId || d.memberId !== memberId))
     await disablePush();
 }
-/** Backend is ready; the reminder button is intentionally not part of the UI until approved. */
+/** The server checks the current debt, creditor identity and wallet cooldown. */
 export async function remindDebt(input: {
   requestId: string;
   tripId: string;

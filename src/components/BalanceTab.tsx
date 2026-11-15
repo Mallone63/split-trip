@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   aggregateByUnit,
   computeBalances,
@@ -52,6 +52,7 @@ interface Props {
     targetAmountMinor: number,
   ) => Promise<void>;
   onUndoTransfer: (transferId: string) => Promise<void>;
+  onRemindDebt: (payerId: string, receiverId: string, currency: CurrencyCode) => Promise<void>;
 }
 
 export default function BalanceTab({
@@ -65,7 +66,16 @@ export default function BalanceTab({
   onUndoPayment,
   onAddTransfer,
   onUndoTransfer,
+  onRemindDebt,
 }: Props) {
+  const sendingReminder = useRef(false);
+  const [reminderBusy, setReminderBusy] = useState(false);
+  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 2000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   // No tabs: all three currency ledgers are shown at once. A ledger is all
   // expenses of that currency + payments of the same currency (rate 1:1,
   // zero-sum inside the ledger).
@@ -231,6 +241,26 @@ export default function BalanceTab({
   const memberName = (memberId: string): string =>
     members.find((m) => m.id === memberId)?.name ?? '—';
 
+  async function sendReminder(ledger: Ledger, settlement: Settlement) {
+    if (sendingReminder.current) return;
+    const from = ledger.wallets.find((w) => w.key === settlement.fromMemberId);
+    const to = ledger.wallets.find((w) => w.key === settlement.toMemberId);
+    if (!from || !to || !meId || !to.memberIds.includes(meId)) return;
+    if (!window.confirm(`Напомнить ${from.label} о долге ${formatMinor(settlement.amountMinor, ledger.currency)}?`)) return;
+    sendingReminder.current = true;
+    setReminderBusy(true);
+    setNotice(null);
+    try {
+      await onRemindDebt(from.memberIds[0], to.memberIds[0], ledger.currency);
+      setNotice({ text: 'Уведомление отправлено', error: false });
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : 'Не удалось отправить уведомление', error: true });
+    } finally {
+      sendingReminder.current = false;
+      setReminderBusy(false);
+    }
+  }
+
   async function markSettled(currency: CurrencyCode, settlement: Settlement) {
     const ledger = ledgers.find((l) => l.currency === currency);
     if (!ledger) return;
@@ -355,6 +385,14 @@ export default function BalanceTab({
 
   return (
     <div className="space-y-4">
+      {notice && (
+        <div role={notice.error ? 'alert' : 'status'} aria-atomic="true"
+          className={`notification-toast fixed inset-x-4 z-50 mx-auto max-w-sm rounded-xl px-4 py-3 text-center text-sm shadow-lg ${notice.error
+            ? 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
+            : 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900'}`}>
+          {notice.text}
+        </div>
+      )}
       {meId && (
         <div role="group" aria-label="Фильтр балансов" className="flex rounded-lg bg-slate-100 dark:bg-slate-800 p-1 text-sm font-medium">
           {[
@@ -486,15 +524,27 @@ export default function BalanceTab({
                       const isPartialOpen = partialKey === settlementKey;
                       const preview = partialPreview(settlement, ledger.currency);
                       const involvesMe = settlementInvolvesMe(ledger, settlement);
+                      const canRemind = !!meId && ledger.wallets.some((wallet) =>
+                        wallet.key === settlement.toMemberId && wallet.memberIds.includes(meId));
                       const entryCcy = partialCcy ?? ledger.currency;
                       return (
                         <li key={settlementKey} className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <span className="min-w-0 text-sm text-slate-700 dark:text-slate-300">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="min-w-0 flex-1 text-sm text-slate-700 dark:text-slate-300">
                               <strong>{labelOf(ledger.currency, settlement.fromMemberId)}</strong>
                               {' → '}
                               <strong>{labelOf(ledger.currency, settlement.toMemberId)}</strong>
                             </span>
+                            {canRemind && (
+                              <button type="button" aria-label="Напомнить о долге" title="Напомнить о долге"
+                                disabled={reminderBusy} onClick={() => void sendReminder(ledger, settlement)}
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 active:bg-slate-200 dark:active:bg-slate-700 disabled:opacity-40">
+                                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+                                  <path d="M10 21h4M12 2V1" />
+                                </svg>
+                              </button>
+                            )}
                             <span className="shrink-0 text-right">
                               {involvesMe && rates ? (
                                 <button
