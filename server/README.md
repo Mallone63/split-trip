@@ -218,3 +218,13 @@ static tool schema, update that schema to match this server as well.
 Supabase HTTP boundary. `npm run build` also type-checks the server. Tests do
 not write to a real trip. The existing Pages deployment still publishes only
 the static `dist/` directory, not this server.
+
+### Push notifications and silent entry
+
+`add_expense` now accepts `silent: boolean` (default `false`) for both kinds.
+Set it only when requested, and preserve it with the request ID on retries.
+Changing silent mode under an existing request ID returns 409. Notifications
+come from the database outbox, so both PWA and MCP writes behave identically.
+The separate Supabase Edge Function handles subscriptions, dispatch and debt
+reminders; see `supabase/README.md`. It is intentionally independent of the
+owner-private Sites MCP and requires no change to the Site's audience.

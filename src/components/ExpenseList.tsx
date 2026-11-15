@@ -37,9 +37,9 @@ export default function ExpenseList({
   onAdd,
   onDelete,
 }: Props) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('expense'));
 
-  const [filter, setFilter] = useState(readExpenseFilterPref);
+  const [filter, setFilter] = useState(() => new URLSearchParams(window.location.search).has('expense') ? 'all' as const : readExpenseFilterPref());
   useEffect(() => {
     writeExpenseFilterPref(filter);
   }, [filter]);

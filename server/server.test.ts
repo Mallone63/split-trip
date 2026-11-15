@@ -68,6 +68,13 @@ function setup(paired = false, beforeRead?: (table: string) => Promise<void>) {
 const cleanup: (() => Promise<void>)[] = [];
 
 describe('expense authors', () => {
+  it('preserves silent mode on creation/retry and rejects changing it under the same requestId', async () => {
+    const { service, rows } = setup();
+    await service.addExpense({ ...input, silent: true });
+    expect(rows[0].silent).toBe(true);
+    expect(await service.addExpense({ ...input, silent: true })).toMatchObject({ created: false });
+    await expect(service.addExpense(input)).rejects.toMatchObject({ status: 409 });
+  });
   it.each([input, personalInput])('stores the author separately from the payer and preserves retries', async (payload) => {
     const { service, rows } = setup(true);
     const args = { ...payload, createdByMemberId: charlie };

@@ -1,0 +1,3 @@
+[functions.push]
+verify_jwt = false
+entrypoint = "./functions/push/bundle.js"
