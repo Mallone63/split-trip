@@ -14,6 +14,10 @@ vi.mock('./lib/api', async (original) => ({
   subscribeToPayments: vi.fn(() => vi.fn()),
   subscribeToTransfers: vi.fn(() => vi.fn()),
 }));
+vi.mock('./lib/push', async (original) => ({
+  ...await original<typeof import('./lib/push')>(),
+  remindDebt: vi.fn(),
+}));
 vi.mock('./lib/fx', async (original) => ({
   ...await original<typeof import('./lib/fx')>(),
   fetchRates: vi.fn().mockResolvedValue({ USD: 1, RUB: 90, JPY: 150 }),
@@ -21,6 +25,7 @@ vi.mock('./lib/fx', async (original) => ({
 }));
 
 import App from './App';
+import { remindDebt } from './lib/push';
 import { addExpense, addMember, loadTripBundle, subscribeToExpenses, subscribeToPayments, subscribeToTransfers } from './lib/api';
 import { readTripCache, writeTripCache } from './lib/tripCache';
 import { TRIP_LOAD_TIMEOUT_MS } from './lib/tripLoader';
@@ -341,7 +346,7 @@ describe('trip regression audit', () => {
     const props = {
       members: group, expenses, payments: [], transfers: [], baseCurrency: 'JPY' as const,
       meId: 'ana', onMarkSettled: vi.fn(), onUndoPayment: vi.fn(),
-      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(), onRemindDebt: vi.fn(),
     };
     const combinedTotal = () => [...container.querySelectorAll('h2')]
       .find((heading) => heading.textContent === 'Всего потрачено')!.nextElementSibling!;
@@ -367,7 +372,7 @@ describe('trip regression audit', () => {
         { memberId: 'ana', amountMinor: 500 }, { memberId: 'ben', amountMinor: 501 },
       ] }], payments: [], transfers: [], baseCurrency: 'USD' as const,
       meId: 'ana', onMarkSettled: vi.fn(), onUndoPayment: vi.fn(),
-      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(), onRemindDebt: vi.fn(),
     };
     const combinedText = () => [...container.querySelectorAll('h2')]
       .find((heading) => heading.textContent === 'Всего потрачено')!.nextElementSibling!.textContent;
@@ -406,7 +411,7 @@ describe('trip regression audit', () => {
       payments: [{ id: 'payment', tripId: 'trip-a', payerId: 'ana', receiverId: 'den', amountMinor: 200, currency: 'JPY' }],
       transfers: [{ id: 'transfer', tripId: 'trip-a', payerId: 'ana', receiverId: 'den',
         sourceCurrency: 'JPY' as const, sourceAmountMinor: 100, targetCurrency: 'RUB' as const, targetAmountMinor: 6000 }],
-      onMarkSettled: vi.fn(), onUndoPayment: vi.fn(), onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+      onMarkSettled: vi.fn(), onUndoPayment: vi.fn(), onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(), onRemindDebt: vi.fn(),
     };
     const totals = () => [...container.querySelectorAll('h2')]
       .find((heading) => heading.textContent === 'Всего потрачено')!.closest('section')!;
@@ -436,7 +441,7 @@ describe('trip regression audit', () => {
     const props = {
       members, expenses: [expense], payments: [], transfers: [], baseCurrency: 'JPY' as const,
       meId: 'ana', onMarkSettled: vi.fn(), onUndoPayment: vi.fn(),
-      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(), onRemindDebt: vi.fn(),
     };
     const total = () => [...container.querySelectorAll('h2')]
       .find((heading) => heading.textContent === 'Всего потрачено')!.closest('section')!.querySelector('[aria-label="Расходы по валютам"] p')!.textContent;
@@ -456,7 +461,7 @@ describe('trip regression audit', () => {
       members, expenses: [{ ...expense, splits: [{ memberId: 'ben', amountMinor: 1000 }] }],
       payments: [], transfers: [], baseCurrency: 'JPY' as const,
       meId: 'ana', onMarkSettled: vi.fn(), onUndoPayment: vi.fn(),
-      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(), onRemindDebt: vi.fn(),
     };
     await act(async () => root.render(<BalanceTab {...props} />));
     await click('Мои');
@@ -474,7 +479,7 @@ describe('trip regression audit', () => {
     const props = {
       members, expenses: [expense], payments: [], transfers: [], baseCurrency: 'JPY' as const,
       meId: null, onMarkSettled: vi.fn(), onUndoPayment: vi.fn(),
-      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(),
+      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(), onRemindDebt: vi.fn(),
     };
     const balancesText = () => [...container.querySelectorAll('h2')]
       .find((h) => h.textContent === 'Балансы')!.parentElement!.textContent;
@@ -615,5 +620,106 @@ describe('trip regression audit', () => {
       { memberId: 'dana', amountMinor: 400 },
     ]);
     expect(arg.baseAmountMinor).toBe(1900); // JPY is the trip base at rate 1
+  });
+});
+
+
+describe('reminders and navigation', () => {
+  const bell = () => container.querySelector<HTMLButtonElement>('button[aria-label="Напомнить о долге"]');
+  async function openDebts(me = 'ana', group = members) {
+    window.localStorage.setItem('tripsplit:me:trip-a', me);
+    load.mockResolvedValue({ ...bundle(), members: group, expenses: [expense] });
+    await render();
+  }
+
+  it('confirms before sending, prevents repeat taps in flight, then dismisses feedback at 2 seconds', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(false));
+    const confirmation = vi.mocked(window.confirm);
+    const response = deferred<{ queued: boolean }>();
+    vi.mocked(remindDebt).mockReturnValue(response.promise);
+    await openDebts();
+    await act(async () => bell()!.click());
+    expect(remindDebt).not.toHaveBeenCalled();
+    confirmation.mockReturnValue(true);
+    await act(async () => { bell()!.click(); bell()!.click(); });
+    expect(remindDebt).toHaveBeenCalledOnce();
+    expect(remindDebt).toHaveBeenCalledWith(expect.objectContaining({
+      tripId: 'trip-a', actorId: 'ana', payerId: 'ben', receiverId: 'ana', currency: 'JPY',
+    }));
+    expect(bell()!.disabled).toBe(true);
+    await act(async () => response.resolve({ queued: true }));
+    expect(container.textContent).toContain('Уведомление отправлено');
+    expect(bell()!.disabled).toBe(false);
+    await act(async () => vi.advanceTimersByTime(1999));
+    expect(container.textContent).toContain('Уведомление отправлено');
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(container.textContent).not.toContain('Уведомление отправлено');
+  });
+
+  it('shows cooldown and disabled-recipient errors for 2 seconds, with a fresh timer per attempt', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+    vi.mocked(remindDebt).mockRejectedValueOnce(new Error('Уже напоминали за последние 24 часа'))
+      .mockResolvedValueOnce({ queued: false, reason: 'notifications_disabled' });
+    await openDebts();
+    await act(async () => bell()!.click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('24 часа');
+    await act(async () => vi.advanceTimersByTime(1500));
+    await act(async () => bell()!.click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('У получателя не включены');
+    await act(async () => vi.advanceTimersByTime(500));
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    await act(async () => vi.advanceTimersByTime(1500));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).not.toContain('Уведомление отправлено');
+  });
+
+  it('hides reminders from debtors and unknown identities, but allows the creditor partner', async () => {
+    await openDebts('ben');
+    expect(bell()).toBeNull();
+    const props = {
+      members: [...members.map(m => m.id === 'ana' ? { ...m, unit: 'couple' } : m),
+        { id: 'partner', name: 'Партнёр', tripId: 'trip-a', unit: 'couple' }],
+      expenses: [expense], payments: [], transfers: [], baseCurrency: 'JPY' as const,
+      meId: 'partner', onMarkSettled: vi.fn(), onUndoPayment: vi.fn(),
+      onAddTransfer: vi.fn(), onUndoTransfer: vi.fn(), onRemindDebt: vi.fn(),
+    };
+    await act(async () => root.render(<BalanceTab {...props} />));
+    expect(bell()).not.toBeNull();
+    await act(async () => root.render(<BalanceTab {...props} meId="missing" />));
+    expect(bell()).toBeNull();
+  });
+
+  it('restores Expenses after visiting Management and remounting', async () => {
+    load.mockResolvedValue(bundle());
+    await render();
+    await chooseTab(1);
+    await chooseTab(2);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render();
+    expect(container.textContent).toContain('+ Добавить');
+    expect(container.textContent).not.toContain('Пригласить');
+  });
+
+  it('honors both push destinations over storage and clears the target on manual navigation', async () => {
+    localStorage.setItem('tripsplit:lastTab', 'expenses');
+    window.history.replaceState(null, '', '/split-trip/?trip=trip-a&tab=balances');
+    await openDebts();
+    expect(bell()).not.toBeNull();
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    window.history.replaceState(null, '', '/split-trip/?trip=trip-a&tab=expenses&expense=expense-a');
+    await render();
+    expect(container.textContent).toContain('Ужин');
+    expect(bell()).toBeNull();
+    await chooseTab(0);
+    expect(window.location.search).toBe('?trip=trip-a');
+    await chooseTab(2);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render();
+    expect(bell()).not.toBeNull();
   });
 });

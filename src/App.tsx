@@ -23,7 +23,8 @@ import {
 import { supabaseConfigured } from './lib/supabase';
 import { useTripLoader } from './lib/useTripLoader';
 import { writeTripCache } from './lib/tripCache';
-import { disconnectPushOnIdentityChange } from './lib/push';
+import { disconnectPushOnIdentityChange, remindDebt } from './lib/push';
+import { readLastTab, writeLastTab } from './lib/prefs';
 import { initializePwa } from './lib/pwa';
 import { CURRENCIES, type CurrencyCode } from './lib/currencies';
 import BalanceTab from './components/BalanceTab';
@@ -33,6 +34,7 @@ import InviteTab from './components/InviteTab';
 import SetupHelp from './components/SetupHelp';
 import SetupScreen from './components/SetupScreen';
 import TabBar, { type Tab } from './components/TabBar';
+import PushSettings from './components/PushSettings';
 
 function Shell({ children }: { children: ReactNode }) {
   return <div className="app-shell mx-auto min-h-dvh max-w-md">{children}</div>;
@@ -42,10 +44,30 @@ export default function App() {
   const [tripId, setTripId] = useState<string | null>(() => (supabaseConfigured ? getTripIdFromUrl() : null));
   const { bundle, refreshing, error, updatedAt, refresh, invalidate, setBundle } = useTripLoader(tripId);
   const tripLoaded = Boolean(bundle);
-  const [tab, setTab] = useState<Tab>(() => new URLSearchParams(window.location.search).get('tab') === 'expenses' ? 'expenses' : 'balances');
+  const [tab, setTab] = useState<Tab>(readLastTab);
   const [addingExpense, setAddingExpense] = useState(false);
   const [meId, setMeIdState] = useState<string | null>(null);
   const [showRefreshNotice, setShowRefreshNotice] = useState(false);
+
+  useEffect(() => { writeLastTab(tab); }, [tab]);
+
+  function changeTab(next: Tab) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('tab');
+    url.searchParams.delete('expense');
+    window.history.replaceState(null, '', url);
+    setTab(next);
+    if (next !== 'expenses') setAddingExpense(false);
+  }
+
+  async function handleRemindDebt(payerId: string, receiverId: string, currency: CurrencyCode) {
+    if (!tripId || !meId || !bundle?.members.some((m) => m.id === meId))
+      throw new Error('Сначала выбери себя среди участников');
+    const result = await remindDebt({
+      requestId: crypto.randomUUID(), tripId, actorId: meId, payerId, receiverId, currency,
+    });
+    if (!result.queued) throw new Error('У получателя не включены уведомления');
+  }
 
   useEffect(() => {
     setShowRefreshNotice(false);
@@ -276,6 +298,11 @@ export default function App() {
       )}
 
       <main>
+        {tab !== 'invite' && !addingExpense && (
+          <PushSettings key={`${tripId}:${meId}`} tripId={tripId}
+            memberId={bundle.members.some((m) => m.id === meId) ? meId : null}
+            prompt onSelectMe={() => changeTab('invite')} />
+        )}
         {tab === 'balances' && (
           <BalanceTab
             members={bundle.members}
@@ -288,6 +315,7 @@ export default function App() {
             onUndoPayment={handleUndoPayment}
             onAddTransfer={handleAddTransfer}
             onUndoTransfer={handleUndoTransfer}
+            onRemindDebt={handleRemindDebt}
           />
         )}
         {tab === 'expenses' &&
@@ -325,10 +353,7 @@ export default function App() {
 
       <TabBar
         active={tab}
-        onChange={(next) => {
-          setTab(next);
-          if (next !== 'expenses') setAddingExpense(false);
-        }}
+        onChange={changeTab}
       />
     </Shell>
   );

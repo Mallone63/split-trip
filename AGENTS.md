@@ -172,7 +172,12 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
 - Subscriptions/jobs/reminder cooldowns are private to the service role. Preserve
   device-secret validation, endpoint allowlisting, job leases/retries, and wallet
   cooldowns. Never expose the service key or VAPID private key in VITE variables.
-- User has requested a reminder-button mockup before UI changes: keep reminder
-  backend/client API available, but do not add the BalanceTab button until approved.
+- Reminder UI is approved: a small bell between wallet names and amount, shown
+  only to the creditor wallet. Confirm before sending; success and error notices
+  disappear after 2 seconds. Keep the server's 24-hour wallet cooldown authoritative.
+- Push categories default on; entry onboarding requests OS permission only from
+  an explicit button gesture. Respect dismissed prompts and manual opt-outs.
+- Remember the last balances/expenses tab; management never overwrites it.
+  Incoming push links take priority; manual tab navigation clears their targets.
 - All write tests remain local/mocked; real-device push delivery requires an
   opted-in device and a genuine user action, never a production test expense.

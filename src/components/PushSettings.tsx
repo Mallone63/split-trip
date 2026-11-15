@@ -6,15 +6,21 @@ import {
   preparePush,
   pushState,
   pushSupport,
+  dismissPushPrompt,
+  pushPromptDismissed,
   type PushPreferences,
 } from '../lib/push';
 
 export default function PushSettings({
   tripId,
   memberId,
+  prompt = false,
+  onSelectMe,
 }: {
   tripId: string;
   memberId: string | null;
+  prompt?: boolean;
+  onSelectMe?: () => void;
 }) {
   const [enabled, setEnabled] = useState(false),
     [busy, setBusy] = useState(false),
@@ -23,20 +29,28 @@ export default function PushSettings({
     ...DEFAULT_PUSH_PREFERENCES,
   });
   const [error, setError] = useState<string | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [dismissed, setDismissed] = useState(() => pushPromptDismissed(tripId, memberId));
   const problem = pushSupport();
   useEffect(() => {
     let active = true;
     setReady(false);
     setError(null);
+    if (prompt && pushPromptDismissed(tripId, memberId)) {
+      setDismissed(true);
+      return;
+    }
+    setChecked(Boolean(problem));
     if (!problem) {
       void pushState(tripId, memberId)
         .then((s) => {
           if (active) {
             setEnabled(s.enabled);
             setPrefs(s.preferences);
+            setChecked(true);
           }
         })
-        .catch(() => {});
+        .catch(() => { if (active) setChecked(true); });
       void preparePush()
         .then(() => {
           if (active) setReady(true);
@@ -49,7 +63,7 @@ export default function PushSettings({
     return () => {
       active = false;
     };
-  }, [tripId, memberId, problem]);
+  }, [tripId, memberId, problem, prompt]);
   async function toggle() {
     if (!memberId) return;
     setBusy(true);
@@ -86,6 +100,31 @@ export default function PushSettings({
       setBusy(false);
     }
   }
+  if (prompt) {
+    if (dismissed || enabled || !checked) return null;
+    return (
+      <section aria-label="Включение уведомлений" className="mb-4 rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/40 p-3">
+        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Включить уведомления?</p>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+          {problem ?? (!memberId ? 'Выбери себя, чтобы получать уведомления о своих расходах и долгах.' : 'Расходы, погашения и напоминания о твоих долгах.')}
+        </p>
+        <div className="mt-2 flex gap-2">
+          {!problem && (
+            <button type="button" disabled={busy || (!!memberId && !ready)}
+              onClick={() => memberId ? void toggle() : onSelectMe?.()}
+              className="min-h-11 rounded-lg bg-teal-600 px-4 text-sm font-semibold text-white disabled:opacity-40">
+              {busy ? 'Включаю…' : memberId ? 'Включить' : 'Выбрать себя'}
+            </button>
+          )}
+          <button type="button" disabled={busy} onClick={() => {
+            dismissPushPrompt(tripId, memberId);
+            setDismissed(true);
+          }} className="min-h-11 rounded-lg px-3 text-sm text-slate-600 dark:text-slate-400">Позже</button>
+        </div>
+        {error && <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      </section>
+    );
+  }
   return (
     <section className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
       <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -104,7 +143,7 @@ export default function PushSettings({
           <div className="mt-2 space-y-1">
             {(
               [
-                ['expenses', 'Новые расходы'],
+                ['expenses', 'Расходы'],
                 ['settlements', 'Погашения и смена валюты долга'],
                 ['reminders', 'Напоминания о долгах'],
               ] as const

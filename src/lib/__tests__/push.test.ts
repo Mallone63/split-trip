@@ -61,6 +61,7 @@ describe('device push lifecycle', () => {
     );
     expect(permission).toHaveBeenCalledOnce();
     await pending;
+    expect(push.pushPromptDismissed('trip', 'member')).toBe(true);
     const first = JSON.parse(
       http.mock.calls.find((c) => String(c[0]).endsWith('/subscribe'))![1].body,
     );
@@ -102,6 +103,8 @@ describe('device push lifecycle', () => {
     expect(unsub).not.toHaveBeenCalled();
     await push.disconnectPushOnIdentityChange('trip', 'other');
     expect(unsub).toHaveBeenCalledOnce();
+    expect(push.pushPromptDismissed('trip', 'member')).toBe(true);
+    expect(push.pushPromptDismissed('trip', 'other')).toBe(false);
     expect(await push.pushState('trip', 'member')).toMatchObject({
       enabled: false,
     });

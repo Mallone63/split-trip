@@ -4,6 +4,24 @@ import type { ExpenseFilter } from './expenseView';
 
 const MINE_ONLY_KEY = 'tripsplit:mineOnly';
 const EXPENSE_FILTER_KEY = 'tripsplit:expenseFilter';
+const LAST_TAB_KEY = 'tripsplit:lastTab';
+
+export function readLastTab(): 'balances' | 'expenses' {
+  const linked = new URLSearchParams(window.location.search).get('tab');
+  if (linked === 'balances' || linked === 'expenses') return linked;
+  try {
+    return localStorage.getItem(LAST_TAB_KEY) === 'expenses' ? 'expenses' : 'balances';
+  } catch {
+    return 'balances';
+  }
+}
+
+export function writeLastTab(tab: string): void {
+  if (tab !== 'balances' && tab !== 'expenses') return;
+  try {
+    localStorage.setItem(LAST_TAB_KEY, tab);
+  } catch { /* Storage is optional. */ }
+}
 
 /** "Только мои" filter on the balances tab (also used by older clients). */
 export function readMineOnlyPref(): boolean {
