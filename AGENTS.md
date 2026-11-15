@@ -161,3 +161,18 @@ npm run gen:icons  # regenerate PWA icons (pure Node script)
   currency (the debt itself still nets in its own ledger; today's fx rate).
   `payments.currency` null = legacy trip base.
 - Definition of done: `npm test` and `npm run build` both green.
+
+## Web Push
+
+- `server/push.ts` is the shared Supabase Edge Function handler; `push-content.ts`
+  builds messages and calculates current debts using the existing money helpers.
+- `public/sw.js` handles visible pushes and scoped deep links only; no asset cache.
+- Apply `20261115070000_web_push.sql` before shipping `silent` or payment actors.
+  The trigger queues only newly written records; never backfill notifications.
+- Subscriptions/jobs/reminder cooldowns are private to the service role. Preserve
+  device-secret validation, endpoint allowlisting, job leases/retries, and wallet
+  cooldowns. Never expose the service key or VAPID private key in VITE variables.
+- User has requested a reminder-button mockup before UI changes: keep reminder
+  backend/client API available, but do not add the BalanceTab button until approved.
+- All write tests remain local/mocked; real-device push delivery requires an
+  opted-in device and a genuine user action, never a production test expense.

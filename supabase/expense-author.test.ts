@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { describe, expect, it } from 'vitest';
 
-const schema = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
+const schema = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8').split('-- Web Push infrastructure')[0];
 const migration = readFileSync(new URL('./migrations/20261113120000_expense_author.sql', import.meta.url), 'utf8');
 const trip = '10000000-0000-4000-8000-000000000001';
 const payer = '20000000-0000-4000-8000-000000000001';
@@ -25,7 +25,7 @@ describe('expense author SQL migration (isolated PostgreSQL)', () => {
   it('upgrades existing data without attributing old rows and accepts old and new clients', async () => {
     const db = new PGlite();
     try {
-      await db.exec('create publication supabase_realtime');
+      await db.exec('create publication supabase_realtime; create role anon; create role authenticated; create role service_role bypassrls');
       // Model the previous schema by omitting only the new nullable column.
       const oldSchema = schema.replace(/^.*created_by_member_id uuid.*\n/m, '');
       expect(oldSchema).not.toBe(schema);
@@ -48,7 +48,7 @@ describe('expense author SQL migration (isolated PostgreSQL)', () => {
   it('includes the same nullable foreign key in a fresh schema', async () => {
     const db = new PGlite();
     try {
-      await db.exec('create publication supabase_realtime');
+      await db.exec('create publication supabase_realtime; create role anon; create role authenticated; create role service_role bypassrls');
       await db.exec(schema);
       await seed(db);
       expect((await insert(db, author)).rows[0]).toMatchObject({ created_by_member_id: author });

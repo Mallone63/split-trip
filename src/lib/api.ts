@@ -135,6 +135,7 @@ export interface TripBundle {
 export interface NewExpenseInput {
   payerId: string;
   createdByMemberId?: string | null;
+  silent?: boolean;
   title: string;
   currency: CurrencyCode;
   amountMinor: number;
@@ -275,6 +276,7 @@ export async function addExpense(tripId: string, input: NewExpenseInput): Promis
     base_amount: input.baseAmountMinor,
     splits: input.splits,
     spent_at: input.spentAt,
+    silent: input.silent ?? false,
   };
   let result = await client.from('expenses')
     .insert({ ...row, created_by_member_id: input.createdByMemberId ?? null }).select().single();
@@ -370,6 +372,7 @@ export async function addPayment(
   amountMinor: number,
   currency: string,
   paid?: { amountMinor: number; currency: string },
+  createdByMemberId?: string | null,
 ): Promise<Payment> {
   const client = db();
   const { data, error } = await client
@@ -382,6 +385,7 @@ export async function addPayment(
       currency,
       paid_amount: paid?.amountMinor ?? null,
       paid_currency: paid?.currency ?? null,
+      created_by_member_id: createdByMemberId ?? null,
     })
     .select()
     .single();
@@ -406,6 +410,7 @@ export async function addDebtTransfer(
   sourceAmountMinor: number,
   targetCurrency: string,
   targetAmountMinor: number,
+  createdByMemberId?: string | null,
 ): Promise<DebtTransfer> {
   const client = db();
   const { data, error } = await client
@@ -418,6 +423,7 @@ export async function addDebtTransfer(
       source_amount: sourceAmountMinor,
       target_currency: targetCurrency,
       target_amount: targetAmountMinor,
+      created_by_member_id: createdByMemberId ?? null,
     })
     .select()
     .single();

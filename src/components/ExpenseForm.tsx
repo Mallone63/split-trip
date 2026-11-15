@@ -54,6 +54,7 @@ export default function ExpenseForm({
   onCancel,
 }: Props) {
   const [title, setTitle] = useState('');
+  const [silent, setSilent] = useState(false);
   const [kind, setKind] = useState<ExpenseKind>('shared');
   const [personalAmount, setPersonalAmount] = useState('');
   const [currency, setCurrency] = useState<CurrencyCode>(baseCurrency);
@@ -215,6 +216,7 @@ export default function ExpenseForm({
         baseAmountMinor,
         splits: resolved.splits,
         spentAt,
+        silent,
       });
     } catch (err) {
       setError(errorMessage(err));
@@ -512,6 +514,12 @@ export default function ExpenseForm({
           )}
         </div>}
       </div>
+
+      <label className="flex min-h-11 items-center gap-3 text-sm text-slate-700 dark:text-slate-300">
+        <input type="checkbox" checked={silent} onChange={(e) => setSilent(e.target.checked)}
+          disabled={submitting} className="h-5 w-5 accent-teal-600" />
+        <span>Без уведомлений<span className="block text-xs text-slate-500 dark:text-slate-400">Не отправлять пуш об этом расходе</span></span>
+      </label>
 
       {error && <p className="rounded-lg bg-red-50 dark:bg-red-950/40 p-3 text-sm text-red-700 dark:text-red-300">{error}</p>}
 

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import PushSettings from './PushSettings';
 import { toDataURL } from 'qrcode';
 import type { Member } from '../lib/types';
 
@@ -173,6 +174,8 @@ export default function InviteTab({
           «Это вы» — новые расходы по умолчанию будут от вашего имени.
         </p>
       </section>
+
+      <PushSettings tripId={tripId} memberId={members.some(m => m.id === meId) ? meId : null} />
 
       <section className="rounded-2xl bg-white dark:bg-slate-900 p-4 shadow-sm">
         <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">

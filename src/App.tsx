@@ -23,6 +23,7 @@ import {
 import { supabaseConfigured } from './lib/supabase';
 import { useTripLoader } from './lib/useTripLoader';
 import { writeTripCache } from './lib/tripCache';
+import { disconnectPushOnIdentityChange } from './lib/push';
 import { initializePwa } from './lib/pwa';
 import { CURRENCIES, type CurrencyCode } from './lib/currencies';
 import BalanceTab from './components/BalanceTab';
@@ -41,7 +42,7 @@ export default function App() {
   const [tripId, setTripId] = useState<string | null>(() => (supabaseConfigured ? getTripIdFromUrl() : null));
   const { bundle, refreshing, error, updatedAt, refresh, invalidate, setBundle } = useTripLoader(tripId);
   const tripLoaded = Boolean(bundle);
-  const [tab, setTab] = useState<Tab>('balances');
+  const [tab, setTab] = useState<Tab>(() => new URLSearchParams(window.location.search).get('tab') === 'expenses' ? 'expenses' : 'balances');
   const [addingExpense, setAddingExpense] = useState(false);
   const [meId, setMeIdState] = useState<string | null>(null);
   const [showRefreshNotice, setShowRefreshNotice] = useState(false);
@@ -143,7 +144,7 @@ export default function App() {
     paid?: { amountMinor: number; currency: CurrencyCode },
   ) {
     if (!tripId) return;
-    const payment = await addPayment(tripId, payerId, receiverId, amountMinor, currency, paid);
+    const payment = await addPayment(tripId, payerId, receiverId, amountMinor, currency, paid, meId);
     setBundle((current) =>
       current ? { ...current, payments: [payment, ...current.payments.filter((row) => row.id !== payment.id)] } : current,
     );
@@ -175,6 +176,7 @@ export default function App() {
       sourceAmountMinor,
       targetCurrency,
       targetAmountMinor,
+      meId,
     );
     setBundle((current) =>
       current ? { ...current, transfers: [transfer, ...current.transfers.filter((row) => row.id !== transfer.id)] } : current,
@@ -188,8 +190,10 @@ export default function App() {
     );
   }
 
-  function handleSetMe(memberId: string | null) {
+  async function handleSetMe(memberId: string | null) {
     if (!tripId) return;
+    try { await disconnectPushOnIdentityChange(tripId, memberId); }
+    catch (error) { window.alert(error instanceof Error ? error.message : "Не удалось отключить прежние уведомления"); return; }
     setMe(tripId, memberId);
     setMeIdState(memberId);
   }
